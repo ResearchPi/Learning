@@ -6,7 +6,7 @@ PubMed (NCBI API)
 Google Scholar (will be using scholarly, no official API)
 DOAJ (found)
 Semantic Scholar
-Zenodo 
+Zenodo
 Crossref
 
 NLP Model

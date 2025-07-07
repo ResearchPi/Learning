@@ -50,7 +50,6 @@ def get_papers_topics(query: dict):
     # Papers
     # title, authors, links, publication date, and categories
     # ================================
-
     papers = []
     papers.extend(get_papers_from_arxiv(name, school))
     papers.extend(get_papers_from_pubmed(name, school))
@@ -220,7 +219,6 @@ def get_papers_from_arxiv(name: str = None, school: str = None):
     return unique_papers
 
 def get_papers_from_pubmed(name: str = None, school: str = None):
-
     pass
 
 

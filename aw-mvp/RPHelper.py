@@ -157,7 +157,7 @@ def parse_arxiv_response(response: str, target_author: str | None = None):
     except Exception as e:
         print(f"Error processing arXiv response: {e}")
         return []
-
+      
 def get_papers_from_arxiv(name: str | None = None, school: str | None = None):
     # issue with people with the same name
     import urllib.parse
@@ -432,6 +432,7 @@ def get_papers_from_pubmed(name: str | None = None, school: str | None = None):
     
     print(f"Total unique PubMed papers found: {len(unique_papers)}")
     return unique_papers
+
 
 def get_papers_from_google_scholar(name: str | None = None, school: str | None = None):
     pass

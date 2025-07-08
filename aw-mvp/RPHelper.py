@@ -458,7 +458,7 @@ def get_papers_from_google_scholar(name: str | None = None, school: str | None =
 
 def get_papers_from_doaj(name: str | None = None, school: str | None = None):
     pass
-
+  
 def get_papers_from_semantic_scholar(name: str | None = None, school: str | None = None):
     pass
 

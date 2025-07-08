@@ -9,7 +9,7 @@ def test_get_papers_from_pubmed():
     print(papers)
 
 def test_get_papers_from_google_scholar():
-    papers = RPHelper.get_papers_from_google_scholar(name="John Doe", school="University of California, Berkeley")
+    papers = RPHelper.get_papers_from_google_scholar(name="Pingkun Yan")
     print(papers)
 
 def test_get_papers_from_doaj():
@@ -30,8 +30,8 @@ def test_get_papers_from_crossref():
 
 if __name__ == "__main__":
     # test_get_papers_from_arxiv() # issue with people with the same name
-    test_get_papers_from_pubmed()
-    # test_get_papers_from_google_scholar()
+    # test_get_papers_from_pubmed()
+    test_get_papers_from_google_scholar()
     # test_get_papers_from_doaj()
     # test_get_papers_from_semantic_scholar()
     # test_get_papers_from_zenodo()

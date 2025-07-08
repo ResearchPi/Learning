@@ -5,7 +5,7 @@ def test_get_papers_from_arxiv():
     print(papers)
 
 def test_get_papers_from_pubmed():
-    papers = RPHelper.get_papers_from_pubmed(name="John Doe", school="University of California, Berkeley")
+    papers = RPHelper.get_papers_from_pubmed(name="Pingkun Yan")
     print(papers)
 
 def test_get_papers_from_google_scholar():
@@ -29,9 +29,8 @@ def test_get_papers_from_crossref():
     print(papers)
 
 if __name__ == "__main__":
-    test_get_papers_from_arxiv() # issue with people with the same name
-    
-    # test_get_papers_from_pubmed()
+    # test_get_papers_from_arxiv() # issue with people with the same name
+    test_get_papers_from_pubmed()
     # test_get_papers_from_google_scholar()
     # test_get_papers_from_doaj()
     # test_get_papers_from_semantic_scholar()

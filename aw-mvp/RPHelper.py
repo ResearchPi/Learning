@@ -30,9 +30,29 @@ def test_print_papers(papers: list):
         print(f"Authors: {', '.join(paper.get('authors', ['No authors']))}")
         print(f"Publication Date: {paper.get('publication_date', 'No date')}")
         print(f"Categories: {', '.join(paper.get('categories', ['No categories']))}")
+        print(f"Journal: {paper.get('journal', 'No journal')}")
+        
+        # Handle different link types
         if 'links' in paper:
-            print(f"arXiv ID: {paper['links'].get('arxiv_id', 'No ID')}")
-            print(f"Abstract: {paper['links'].get('abstract', 'No abstract link')}")
+            links = paper['links']
+            if 'arxiv_id' in links:
+                print(f"arXiv ID: {links.get('arxiv_id', 'No ID')}")
+            elif 'pmid' in links:
+                print(f"PubMed ID: {links.get('pmid', 'No ID')}")
+            elif 'scholar_id' in links:
+                print(f"Scholar ID: {links.get('scholar_id', 'No ID')}")
+                if 'citation_count' in paper:
+                    print(f"Citations: {paper['citation_count']}")
+            
+            print(f"Abstract: {links.get('abstract', 'No abstract link')}")
+        
+        # Print abstract if available
+        if paper.get('abstract'):
+            abstract = paper['abstract']
+            if len(abstract) > 200:
+                abstract = abstract[:200] + "..."
+            print(f"Abstract: {abstract}")
+            
         print("-"*100)
 
 def get_papers(query: dict):
@@ -432,7 +452,6 @@ def get_papers_from_pubmed(name: str | None = None, school: str | None = None):
     
     print(f"Total unique PubMed papers found: {len(unique_papers)}")
     return unique_papers
-
 
 def get_papers_from_google_scholar(name: str | None = None, school: str | None = None):
     pass

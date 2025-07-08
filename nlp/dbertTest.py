@@ -1,5 +1,6 @@
 import torch
 from transformers import pipeline
+from keybert import KeyBERT
 
 '''
 Notes:
@@ -55,6 +56,36 @@ print(multi_label_clf(string2))
 
 
 # Zero shot classification
+zeroshot = pipeline(
+    "zero-shot-classification",
+    model="typeform/distilbert-base-uncased-mnli",
+    multi_label=True,
+    hypothesis_template="This professor is {}."
+)
+# summary was taken from a random review from ratemyprofessor.com
+summary = "The most disorganized class of this size I have ever taken. Considering it is required for many majors and has been taught for years, it's hard to understand how a professor would not know the curriculum. His lectures were useless, he claimed to be too busy to give us test practice/study materials, and was condescending when questions were asked."
+labels = ["unprepared", "condescending", "bad", "amazing"]
+result = zeroshot(summary, labels)
+print(result)
+# as expected, condescending and bad had very high scores, and amazing was low. for some reason, unprepared was also low. it didn't appear directly in the text but should've been somewhat related.
 
 
 # Keyword extraction
+kw_model = KeyBERT("distilbert-base-nli-mean-tokens")
+
+text = """
+Dr. Smith led a $2M NIH grant, teaches two undergraduate courses,
+serves on the faculty senate, and publishes widely on cognitive science.
+"""
+
+# extract top 5 keyphrases of length 1-3 words:
+keywords = kw_model.extract_keywords(
+    text,
+    keyphrase_ngram_range=(1, 3),
+    stop_words="english",
+    top_n=5
+)
+
+for phrase, score in keywords:
+    print(f"{phrase} - {score:.4f}")
+

@@ -48,7 +48,6 @@ def test_print_papers(papers: list):
             # Print DOI if available
             if 'doi' in links:
                 print(f"DOI: {links.get('doi', 'No DOI')}")
-            
             print(f"Abstract: {links.get('abstract', 'No abstract link')}")
         
         # Print abstract if available

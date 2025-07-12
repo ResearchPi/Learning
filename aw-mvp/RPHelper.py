@@ -11,6 +11,7 @@
 # - name: str
 # - school: str
 
+# Reduce Scope of Papers into only name and show papers that are related to the name with affiliations
 
 def test_print_query(query: dict):
     print(f"Name: {query['name']}")
@@ -44,6 +45,10 @@ def test_print_papers(papers: list):
                 if 'citation_count' in paper:
                     print(f"Citations: {paper['citation_count']}")
             
+            # Print DOI if available
+            if 'doi' in links:
+                print(f"DOI: {links.get('doi', 'No DOI')}")
+            
             print(f"Abstract: {links.get('abstract', 'No abstract link')}")
         
         # Print abstract if available
@@ -62,7 +67,6 @@ def get_papers(query: dict):
     name: str | None = query.get('name', None)
     school: str | None = query.get('school', None)
     test_print_query(query)
-    pass
 
     # ================================
     # Get Papers
@@ -72,13 +76,14 @@ def get_papers(query: dict):
     # ================================
     papers = []
     papers.extend(get_papers_from_arxiv(name, school))
-    papers.extend(get_papers_from_pubmed(name, school) or [])
+    papers.extend(get_papers_from_pubmed(name, school))
     papers.extend(get_papers_from_google_scholar(name, school) or [])
-    papers.extend(get_papers_from_doaj(name, school) or [])
+    papers.extend(get_papers_from_doaj(name, school))
     papers.extend(get_papers_from_semantic_scholar(name, school) or [])
     papers.extend(get_papers_from_zenodo(name, school) or [])
     papers.extend(get_papers_from_crossref(name, school) or [])
     test_print_papers(papers)
+    # get rid of duplicates
     pass
 
     # ================================
@@ -92,59 +97,48 @@ def parse_arxiv_response(response: str, target_author: str | None = None):
     # {
     #     "paper": {
     #         "title": "Paper Title",
-    #         "authors": ["Author 1", "Author 2"],
-    #         "links": {
-    #             "pdf": "https://arxiv.org/pdf/1234.5678",
-    #             "abstract": "https://arxiv.org/abs/1234.5678",
-    #             "arxiv_id": "1234.5678"
-    #         },
+    #         "authors": [
+    #             {"name": "Author 1", "affiliation": "Affiliation 1"},
+    #             {"name": "Author 2", "affiliation": "Affiliation 2"}
+    #         ],
+    #         "links": { ... },
     #         "publication_date": "2023-01-01T00:00:00Z",
-    #         "categories": ["cs.CV", "cs.AI"]
+    #         "categories": ["cs.CV", "cs.AI"],
+    #         "journal": "arXiv",
+    #         "abstract": "Paper abstract text"
     #     }
     # }
     # ================================
     import xml.etree.ElementTree as ET
     papers = []
-    
     try:
-        # Parse XML to a tree structure
         root = ET.fromstring(response)
-        
-        # Define namespaces used in arXiv XML
         namespaces = {
             'atom': 'http://www.w3.org/2005/Atom',
             'arxiv': 'http://arxiv.org/schemas/atom',
             'opensearch': 'http://a9.com/-/spec/opensearch/1.1/'
         }
-        
-        # Find all entries (papers)
         for entry in root.findall('.//atom:entry', namespaces):
-            # First, check if the target author is in the authors list
             authors = []
             author_found = False
-            
-            for author in entry.findall('atom:author/atom:name', namespaces):
-                if author.text is not None:
-                    author_name = author.text.strip()
-                    authors.append(author_name)
-                    # Check if this author matches our target
+            for author_elem in entry.findall('atom:author', namespaces):
+                name_elem = author_elem.find('atom:name', namespaces)
+                aff_elem = author_elem.find('arxiv:affiliation', namespaces)
+                author_name = name_elem.text.strip() if name_elem is not None and name_elem.text else ''
+                author_affiliation = aff_elem.text.strip() if aff_elem is not None and aff_elem.text else ''
+                if author_name:
+                    authors.append({"name": author_name, "affiliation": author_affiliation})
                     if target_author and target_author.lower() in author_name.lower():
                         author_found = True
-            
-            # Only process this paper if the target author is found (or if no target specified)
+
             if target_author and not author_found:
                 continue
-            
-            # Now extract all the paper details
+
             paper = {}
             paper['authors'] = authors
-            
-            # Get title
             title_elem = entry.find('atom:title', namespaces)
             if title_elem is not None and title_elem.text is not None:
                 paper['title'] = title_elem.text.strip()
-            
-            # Get arXiv ID and links
             id_elem = entry.find('atom:id', namespaces)
             if id_elem is not None and id_elem.text is not None:
                 arxiv_id = id_elem.text.split('/')[-1]
@@ -153,24 +147,26 @@ def parse_arxiv_response(response: str, target_author: str | None = None):
                     'abstract': f"https://arxiv.org/abs/{arxiv_id}",
                     'arxiv_id': arxiv_id
                 }
-            
-            # Get publication date
+            doi_elem = entry.find('arxiv:doi', namespaces)
+            if doi_elem is not None and doi_elem.text is not None:
+                paper['links']['doi'] = doi_elem.text.strip()
             published_elem = entry.find('atom:published', namespaces)
             if published_elem is not None:
                 paper['publication_date'] = published_elem.text
-            
-            # Get categories
             categories = []
             for category in entry.findall('atom:category', namespaces):
                 cat_term = category.get('term')
                 if cat_term:
                     categories.append(cat_term)
             paper['categories'] = categories
-            
+            # arXiv does not have a journal, but for consistency:
+            paper['journal'] = 'arXiv'
+            # Get abstract
+            summary_elem = entry.find('atom:summary', namespaces)
+            if summary_elem is not None and summary_elem.text:
+                paper['abstract'] = summary_elem.text.strip()
             papers.append(paper)
-        
         return papers
-        
     except ET.ParseError as e:
         print(f"Error parsing XML: {e}")
         return []
@@ -179,7 +175,7 @@ def parse_arxiv_response(response: str, target_author: str | None = None):
         return []
       
 def get_papers_from_arxiv(name: str | None = None, school: str | None = None):
-    # issue with people with the same name
+    # issue with people with the same name FIXME
     import urllib.parse
     import requests
 
@@ -188,7 +184,6 @@ def get_papers_from_arxiv(name: str | None = None, school: str | None = None):
         return []
 
     # Use more specific search terms
-    # Try different search strategies to get better results
     search_strategies = [
         f'au:"{name}"',  # Exact match with quotes
         f'au:{name}',    # Standard author search
@@ -211,7 +206,7 @@ def get_papers_from_arxiv(name: str | None = None, school: str | None = None):
             response = requests.get(url)
             response.raise_for_status()
             
-            # Parse the XML response (now with built-in author filtering)
+            # Parse the XML response
             papers = parse_arxiv_response(response.text, name)
             
             # print(f"Found {len(papers)} papers for search '{search_query}'")
@@ -221,17 +216,38 @@ def get_papers_from_arxiv(name: str | None = None, school: str | None = None):
             print(f"HTTP Error for search '{search_query}': {e}")
             continue
     
-    # Remove duplicates based on arXiv ID
+    # Remove duplicates based on arXiv ID and DOI
     unique_papers = []
     seen_ids = set()
+    seen_dois = set()
+    
     for paper in all_papers:
+        is_duplicate = False
+        
+        # Check for arXiv ID duplicates
         if 'links' in paper and 'arxiv_id' in paper['links']:
             arxiv_id = paper['links']['arxiv_id']
-            if arxiv_id not in seen_ids:
+            if arxiv_id in seen_ids:
+                is_duplicate = True
+            else:
                 seen_ids.add(arxiv_id)
-                unique_papers.append(paper)
+        
+        # Check for DOI duplicates (if not already marked as duplicate)
+        if not is_duplicate and 'links' in paper and 'doi' in paper['links']:
+            doi = paper['links']['doi']
+            if doi in seen_dois:
+                is_duplicate = True
+            else:
+                seen_dois.add(doi)
+        
+        # Add paper if it's not a duplicate
+        if not is_duplicate:
+            unique_papers.append(paper)
     
-    print(f"Total unique papers found: {len(unique_papers)}")
+    # print(f"Total papers found: {len(all_papers)}")
+    # print(f"Total unique papers found: {len(unique_papers)}")
+    # print(f"Deduplication stats: {len(seen_ids)} unique arXiv IDs, {len(seen_dois)} unique DOIs")
+    
     return unique_papers
 
 def parse_pubmed_response(response: str, target_author: str):
@@ -240,12 +256,11 @@ def parse_pubmed_response(response: str, target_author: str):
     # {
     #     "paper": {
     #         "title": "Paper Title",
-    #         "authors": ["Author 1", "Author 2"],
-    #         "links": {
-    #             "pmid": "12345678",
-    #             "abstract": "https://pubmed.ncbi.nlm.nih.gov/12345678/",
-    #             "pdf": None  # PubMed doesn't provide direct PDF links
-    #         },
+    #         "authors": [
+    #             {"name": "Author 1", "affiliation": "Affiliation 1"},
+    #             {"name": "Author 2", "affiliation": "Affiliation 2"}
+    #         ],
+    #         "links": { ... },
     #         "publication_date": "2023-01-01",
     #         "categories": ["MeSH Term 1", "MeSH Term 2"],
     #         "journal": "Journal Name",
@@ -254,65 +269,47 @@ def parse_pubmed_response(response: str, target_author: str):
     # }
     # ================================
     import xml.etree.ElementTree as ET
-    
     papers = []
-    
     try:
         root = ET.fromstring(response)
-        
-        # Find all articles
         for article in root.findall('.//PubmedArticle'):
-            # Check if the target author/professor is in the authors list
             authors = []
             author_found = False
-            
             for author in article.findall('.//Author'):
                 last_name_elem = author.find('LastName')
                 first_name_elem = author.find('ForeName')
-                
-                if last_name_elem is not None and last_name_elem.text:
-                    last_name = last_name_elem.text.strip()
-                    first_name = ""
-                    if first_name_elem is not None and first_name_elem.text:
-                        first_name = first_name_elem.text.strip()
-                    
-                    full_name = f"{first_name} {last_name}".strip()
-                    if full_name:
-                        authors.append(full_name)
-                        # Check if this author matches our target professor
-                        if target_author.lower() in full_name.lower():
-                            author_found = True
-            
-            # Only process this paper if the professor is found
+                aff_elem = author.find('AffiliationInfo/Affiliation')
+                last_name = last_name_elem.text.strip() if last_name_elem is not None and last_name_elem.text else ''
+                first_name = first_name_elem.text.strip() if first_name_elem is not None and first_name_elem.text else ''
+                full_name = f"{first_name} {last_name}".strip()
+                affiliation = aff_elem.text.strip() if aff_elem is not None and aff_elem.text else ''
+                if full_name:
+                    authors.append({"name": full_name, "affiliation": affiliation})
+                    if target_author.lower() in full_name.lower():
+                        author_found = True
             if not author_found:
                 continue
-            
-            # Now extract all the paper details
             paper = {}
             paper['authors'] = authors
-            
-            # Get PMID
             pmid_elem = article.find('.//PMID')
             if pmid_elem is not None and pmid_elem.text:
                 pmid = pmid_elem.text
                 paper['links'] = {
                     'pmid': pmid,
                     'abstract': f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/",
-                    'pdf': None  # PubMed doesn't provide PDF links
+                    'pdf': None
                 }
-            
-            # Get title
+            doi_elem = article.find('.//ELocationID[@EIdType="doi"]')
+            if doi_elem is not None and doi_elem.text:
+                paper['links']['doi'] = doi_elem.text.strip()
             title_elem = article.find('.//ArticleTitle')
             if title_elem is not None and title_elem.text:
                 paper['title'] = title_elem.text.strip()
-            
-            # Get publication date
             pub_date_elem = article.find('.//PubDate')
             if pub_date_elem is not None:
                 year_elem = pub_date_elem.find('Year')
                 month_elem = pub_date_elem.find('Month')
                 day_elem = pub_date_elem.find('Day')
-                
                 date_parts = []
                 if year_elem is not None and year_elem.text:
                     date_parts.append(year_elem.text)
@@ -320,32 +317,21 @@ def parse_pubmed_response(response: str, target_author: str):
                     date_parts.append(month_elem.text)
                 if day_elem is not None and day_elem.text:
                     date_parts.append(day_elem.text)
-                
                 if date_parts:
                     paper['publication_date'] = '-'.join(date_parts)
-            
-            # Get journal information
             journal_elem = article.find('.//Journal/Title')
             if journal_elem is not None and journal_elem.text:
                 paper['journal'] = journal_elem.text.strip()
-            
-            # Get abstract
             abstract_elem = article.find('.//Abstract/AbstractText')
             if abstract_elem is not None and abstract_elem.text:
                 paper['abstract'] = abstract_elem.text.strip()
-            
-            # Get MeSH terms (categories)
             categories = []
             for mesh_elem in article.findall('.//MeshHeadingList/MeshHeading/DescriptorName'):
                 if mesh_elem.text:
                     categories.append(mesh_elem.text.strip())
             paper['categories'] = categories
-            
-            # Add the paper to our results
             papers.append(paper)
-        
         return papers
-        
     except ET.ParseError as e:
         print(f"Error parsing PubMed XML: {e}")
         return []
@@ -440,25 +426,257 @@ def get_papers_from_pubmed(name: str | None = None, school: str | None = None):
             print(f"XML Parse Error for PubMed search '{search_query}': {e}")
             continue
     
-    # Remove duplicates based on PMID
+    # Remove duplicates based on PMID and DOI
     unique_papers = []
     seen_pmids = set()
+    seen_dois = set()
+    
     for paper in all_papers:
+        is_duplicate = False
+        
+        # Check for PMID duplicates
         if 'links' in paper and 'pmid' in paper['links']:
             pmid = paper['links']['pmid']
-            if pmid not in seen_pmids:
+            if pmid in seen_pmids:
+                is_duplicate = True
+            else:
                 seen_pmids.add(pmid)
-                unique_papers.append(paper)
+        
+        # Check for DOI duplicates (if not already marked as duplicate)
+        if not is_duplicate and 'links' in paper and 'doi' in paper['links']:
+            doi = paper['links']['doi']
+            if doi in seen_dois:
+                is_duplicate = True
+            else:
+                seen_dois.add(doi)
+        
+        # Add paper if it's not a duplicate
+        if not is_duplicate:
+            unique_papers.append(paper)
     
-    print(f"Total unique PubMed papers found: {len(unique_papers)}")
+    # print(f"Total papers found: {len(all_papers)}")
+    # print(f"Total unique PubMed papers found: {len(unique_papers)}")
+    # print(f"PubMed deduplication stats: {len(seen_pmids)} unique PMIDs, {len(seen_dois)} unique DOIs")
+    
     return unique_papers
 
 def get_papers_from_google_scholar(name: str | None = None, school: str | None = None):
     pass
 
+def parse_doaj_response(data: dict, target_author: str | None = None, target_school: str | None = None):
+    # ================================
+    # Example of papers
+    # {
+    #     "paper": {
+    #         "title": "Paper Title",
+    #         "authors": [
+    #             {"name": "Author 1", "affiliation": "Affiliation 1"},
+    #             {"name": "Author 2", "affiliation": "Affiliation 2"}
+    #         ],
+    #         "links": { ... },
+    #         "publication_date": "2023-01-01",
+    #         "categories": ["Keyword1", "Keyword2"],
+    #         "journal": "Journal Name",
+    #         "abstract": "Paper abstract text"
+    #     }
+    # }
+    # ================================
+    papers = []
+    
+    try:
+        for article in data.get('results', []):
+            bibjson = article.get('bibjson', {})
+            
+            # Check if the target author is in the authors list
+            authors = []
+            author_found = False
+            school_found = False
+            
+            for author in bibjson.get('author', []):
+                author_name = author.get('name', '').strip()
+                author_affiliation = author.get('affiliation', '').strip()
+                
+                if author_name:
+                    authors.append({"name": author_name, "affiliation": author_affiliation})
+                    
+                    # Check if this author matches our target
+                    if target_author and target_author.lower() in author_name.lower():
+                        author_found = True
+                    
+                    # Check if school/affiliation matches
+                    if target_school and target_school.lower() in author_affiliation.lower():
+                        school_found = True
+            
+            # Only process this paper if the target author is found (or if no target specified)
+            if target_author and not author_found:
+                continue
+            
+            # If school is specified, check if any author has that affiliation
+            if target_school and not school_found:
+                continue
+            
+            # Extract paper details
+            paper = {}
+            paper['authors'] = authors
+            paper['id'] = article.get('id', '')
+            
+            # Get title
+            paper['title'] = bibjson.get('title', 'No title')
+            
+            # Get publication date
+            year = bibjson.get('year', '')
+            month = bibjson.get('month', '')
+            if year:
+                if month:
+                    paper['publication_date'] = f"{year}-{month.zfill(2)}"
+                else:
+                    paper['publication_date'] = year
+            
+            # Get journal information
+            journal = bibjson.get('journal', {})
+            paper['journal'] = journal.get('title', 'No journal')
+            
+            # Get abstract
+            paper['abstract'] = bibjson.get('abstract', '')
+            
+            # Get keywords
+            paper['categories'] = bibjson.get('keywords', [])
+            
+            # Get links
+            links = {}
+            
+            # Get DOI from identifiers
+            for identifier in bibjson.get('identifier', []):
+                if identifier.get('type') == 'doi':
+                    links['doi'] = identifier.get('id', '')
+                elif identifier.get('type') == 'eissn':
+                    links['eissn'] = identifier.get('id', '')
+                elif identifier.get('type') == 'pissn':
+                    links['pissn'] = identifier.get('id', '')
+            
+            # Get fulltext links
+            for link in bibjson.get('link', []):
+                if link.get('type') == 'fulltext':
+                    if link.get('content_type') == 'pdf':
+                        links['pdf'] = link.get('url', '')
+                    else:
+                        links['abstract'] = link.get('url', '')
+            
+            paper['links'] = links
+            
+            papers.append(paper)
+        
+        return papers
+        
+    except Exception as e:
+        print(f"Error parsing DOAJ response: {e}")
+        return []
+
 def get_papers_from_doaj(name: str | None = None, school: str | None = None):
-    pass
-  
+    import requests
+    import urllib.parse
+    import time
+    
+    if not name:
+        print("No author name provided for DOAJ search")
+        return []
+    
+    # DOAJ API base URL
+    base_url = "https://doaj.org/api/search/articles"
+    
+    # Search strategies for DOAJ
+    search_strategies = [
+        name,  # Simple name search
+        f'"{name}"',  # Exact name match
+    ]
+    
+    if school:
+        # Add school affiliation search
+        search_strategies.append(f'{name} {school}')
+        search_strategies.append(f'"{name}" "{school}"')
+    
+    all_papers = []
+    
+    for search_query in search_strategies:
+        print(f"DOAJ search: {search_query}")
+        
+        try:
+            # Search for papers - DOAJ uses path-based search
+            url = f"{base_url}/{urllib.parse.quote(search_query)}"
+            params = {
+                'page': 1,
+                'pageSize': 100  # Maximum page size
+            }
+            
+            response = requests.get(url, params=params)
+            response.raise_for_status()
+            
+            data = response.json()
+            
+            if data.get('total', 0) == 0:
+                print(f"No papers found for search: {search_query}")
+                continue
+            
+            print(f"Found {data.get('total', 0)} papers for search: {search_query}")
+            
+            # Parse the results
+            papers = parse_doaj_response(data, name, school)
+            all_papers.extend(papers)
+            
+            # Handle pagination if there are more results
+            total_pages = (data.get('total', 0) + 99) // 100  # Ceiling division
+            for page in range(2, min(total_pages + 1, 6)):  # Limit to 5 pages max
+                params['page'] = page
+                response = requests.get(base_url, params=params)
+                response.raise_for_status()
+                
+                data = response.json()
+                papers = parse_doaj_response(data, name, school)
+                all_papers.extend(papers)
+                
+                # Rate limiting
+                time.sleep(0.1)
+            
+        except requests.exceptions.RequestException as e:
+            print(f"HTTP Error for DOAJ search '{search_query}': {e}")
+            continue
+        except Exception as e:
+            print(f"Error processing DOAJ search '{search_query}': {e}")
+            continue
+    
+    # Remove duplicates based on DOI and article ID
+    unique_papers = []
+    seen_dois = set()
+    seen_ids = set()
+    
+    for paper in all_papers:
+        is_duplicate = False
+        
+        # Check for DOI duplicates
+        if 'links' in paper and 'doi' in paper['links']:
+            doi = paper['links']['doi']
+            if doi in seen_dois:
+                is_duplicate = True
+            else:
+                seen_dois.add(doi)
+        
+        # Check for article ID duplicates (if not already marked as duplicate)
+        if not is_duplicate and paper.get('id'):
+            article_id = paper['id']
+            if article_id in seen_ids:
+                is_duplicate = True
+            else:
+                seen_ids.add(article_id)
+        
+        # Add paper if it's not a duplicate
+        if not is_duplicate:
+            unique_papers.append(paper)
+    
+    print(f"Total DOAJ papers found: {len(all_papers)}")
+    print(f"Total unique DOAJ papers found: {len(unique_papers)}")
+    
+    return unique_papers
+
 def get_papers_from_semantic_scholar(name: str | None = None, school: str | None = None):
     pass
 

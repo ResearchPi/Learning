@@ -65,6 +65,7 @@ def get_papers(query: dict):
     # title, authors, links, publication date, and categories
     # ================================
     papers = []
+
     papers.extend(get_papers_from_arxiv(name, school) or [])
     papers.extend(get_papers_from_pubmed(name, school) or [])
     papers.extend(get_papers_from_doaj(name, school) or [])
@@ -446,6 +447,115 @@ def get_papers_from_pubmed(name: str | None = None, school: str | None = None):
     # print(f"PubMed deduplication stats: {len(seen_pmids)} unique PMIDs, {len(seen_dois)} unique DOIs")
     
     return unique_papers
+
+def parse_doaj_response(data: dict, target_author: str | None = None, target_school: str | None = None):
+    # ================================
+    # Example of papers
+    # {
+    #     "paper": {
+    #         "title": "Paper Title",
+    #         "authors": [
+    #             {"name": "Author 1", "affiliation": "Affiliation 1"},
+    #             {"name": "Author 2", "affiliation": "Affiliation 2"}
+    #         ],
+    #         "links": { ... },
+    #         "publication_date": "2023-01-01",
+    #         "categories": ["Keyword1", "Keyword2"],
+    #         "journal": "Journal Name",
+    #         "abstract": "Paper abstract text"
+    #     }
+    # }
+    # ================================
+    papers = []
+    
+    try:
+        for article in data.get('results', []):
+            bibjson = article.get('bibjson', {})
+            
+            # Check if the target author is in the authors list
+            authors = []
+            author_found = False
+            school_found = False
+            
+            for author in bibjson.get('author', []):
+                author_name = author.get('name', '').strip()
+                author_affiliation = author.get('affiliation', '').strip()
+                
+                if author_name:
+                    authors.append({"name": author_name, "affiliation": author_affiliation})
+                    
+                    # Check if this author matches our target
+                    if target_author and target_author.lower() in author_name.lower():
+                        author_found = True
+                    
+                    # Check if school/affiliation matches
+                    if target_school and target_school.lower() in author_affiliation.lower():
+                        school_found = True
+            
+            # Only process this paper if the target author is found (or if no target specified)
+            if target_author and not author_found:
+                continue
+            
+            # If school is specified, check if any author has that affiliation
+            if target_school and not school_found:
+                continue
+            
+            # Extract paper details
+            paper = {}
+            paper['authors'] = authors
+            paper['id'] = article.get('id', '')
+            
+            # Get title
+            paper['title'] = bibjson.get('title', 'No title')
+            
+            # Get publication date
+            year = bibjson.get('year', '')
+            month = bibjson.get('month', '')
+            if year:
+                if month:
+                    paper['publication_date'] = f"{year}-{month.zfill(2)}"
+                else:
+                    paper['publication_date'] = year
+            
+            # Get journal information
+            journal = bibjson.get('journal', {})
+            paper['journal'] = journal.get('title', 'No journal')
+            
+            # Get abstract
+            paper['abstract'] = bibjson.get('abstract', '')
+            
+            # Get keywords
+            paper['categories'] = bibjson.get('keywords', [])
+            
+            # Get links
+            links = {}
+            
+            # Get DOI from identifiers
+            for identifier in bibjson.get('identifier', []):
+                if identifier.get('type') == 'doi':
+                    links['doi'] = identifier.get('id', '')
+                elif identifier.get('type') == 'eissn':
+                    links['eissn'] = identifier.get('id', '')
+                elif identifier.get('type') == 'pissn':
+                    links['pissn'] = identifier.get('id', '')
+            
+            # Get fulltext links
+            for link in bibjson.get('link', []):
+                if link.get('type') == 'fulltext':
+                    if link.get('content_type') == 'pdf':
+                        links['pdf'] = link.get('url', '')
+                    else:
+                        links['abstract'] = link.get('url', '')
+            
+            paper['links'] = links
+            
+            papers.append(paper)
+        
+        return papers
+        
+    except Exception as e:
+        print(f"Error parsing DOAJ response: {e}")
+        return []
 
 def parse_doaj_response(data: dict, target_author: str | None = None, target_school: str | None = None):
     # ================================

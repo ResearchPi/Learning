@@ -1,17 +1,8 @@
 # Note: Functions are not scraping the websites, but rather using the APIs to get the data
-# arXiv: https://arxiv.org/
-# PubMed: https://pubmed.ncbi.nlm.nih.gov/
-# Google Scholar: https://scholar.google.com/
-# DOAJ: https://doaj.org/
-# Semantic Scholar: https://www.semanticscholar.org/
-# Zenodo: https://zenodo.org/
-# Crossref: https://www.crossref.org/
 #
 # Query is a dictionary with the following keys:
 # - name: str
 # - school: str
-
-# Reduce Scope of Papers into only name and show papers that are related to the name with affiliations
 
 def test_print_query(query: dict):
     print(f"Name: {query['name']}")
@@ -74,11 +65,10 @@ def get_papers(query: dict):
     # title, authors, links, publication date, and categories
     # ================================
     papers = []
-    papers.extend(get_papers_from_arxiv(name, school))
-    papers.extend(get_papers_from_pubmed(name, school))
-    papers.extend(get_papers_from_google_scholar(name, school) or [])
-    papers.extend(get_papers_from_doaj(name, school))
-    papers.extend(get_papers_from_semantic_scholar(name, school) or [])
+
+    papers.extend(get_papers_from_arxiv(name, school) or [])
+    papers.extend(get_papers_from_pubmed(name, school) or [])
+    papers.extend(get_papers_from_doaj(name, school) or [])
     papers.extend(get_papers_from_zenodo(name, school) or [])
     papers.extend(get_papers_from_crossref(name, school) or [])
     test_print_papers(papers)
@@ -174,7 +164,6 @@ def parse_arxiv_response(response: str, target_author: str | None = None):
         return []
       
 def get_papers_from_arxiv(name: str | None = None, school: str | None = None):
-    # issue with people with the same name FIXME
     import urllib.parse
     import requests
 
@@ -459,8 +448,114 @@ def get_papers_from_pubmed(name: str | None = None, school: str | None = None):
     
     return unique_papers
 
-def get_papers_from_google_scholar(name: str | None = None, school: str | None = None):
-    pass
+def parse_doaj_response(data: dict, target_author: str | None = None, target_school: str | None = None):
+    # ================================
+    # Example of papers
+    # {
+    #     "paper": {
+    #         "title": "Paper Title",
+    #         "authors": [
+    #             {"name": "Author 1", "affiliation": "Affiliation 1"},
+    #             {"name": "Author 2", "affiliation": "Affiliation 2"}
+    #         ],
+    #         "links": { ... },
+    #         "publication_date": "2023-01-01",
+    #         "categories": ["Keyword1", "Keyword2"],
+    #         "journal": "Journal Name",
+    #         "abstract": "Paper abstract text"
+    #     }
+    # }
+    # ================================
+    papers = []
+    
+    try:
+        for article in data.get('results', []):
+            bibjson = article.get('bibjson', {})
+            
+            # Check if the target author is in the authors list
+            authors = []
+            author_found = False
+            school_found = False
+            
+            for author in bibjson.get('author', []):
+                author_name = author.get('name', '').strip()
+                author_affiliation = author.get('affiliation', '').strip()
+                
+                if author_name:
+                    authors.append({"name": author_name, "affiliation": author_affiliation})
+                    
+                    # Check if this author matches our target
+                    if target_author and target_author.lower() in author_name.lower():
+                        author_found = True
+                    
+                    # Check if school/affiliation matches
+                    if target_school and target_school.lower() in author_affiliation.lower():
+                        school_found = True
+            
+            # Only process this paper if the target author is found (or if no target specified)
+            if target_author and not author_found:
+                continue
+            
+            # If school is specified, check if any author has that affiliation
+            if target_school and not school_found:
+                continue
+            
+            # Extract paper details
+            paper = {}
+            paper['authors'] = authors
+            paper['id'] = article.get('id', '')
+            
+            # Get title
+            paper['title'] = bibjson.get('title', 'No title')
+            
+            # Get publication date
+            year = bibjson.get('year', '')
+            month = bibjson.get('month', '')
+            if year:
+                if month:
+                    paper['publication_date'] = f"{year}-{month.zfill(2)}"
+                else:
+                    paper['publication_date'] = year
+            
+            # Get journal information
+            journal = bibjson.get('journal', {})
+            paper['journal'] = journal.get('title', 'No journal')
+            
+            # Get abstract
+            paper['abstract'] = bibjson.get('abstract', '')
+            
+            # Get keywords
+            paper['categories'] = bibjson.get('keywords', [])
+            
+            # Get links
+            links = {}
+            
+            # Get DOI from identifiers
+            for identifier in bibjson.get('identifier', []):
+                if identifier.get('type') == 'doi':
+                    links['doi'] = identifier.get('id', '')
+                elif identifier.get('type') == 'eissn':
+                    links['eissn'] = identifier.get('id', '')
+                elif identifier.get('type') == 'pissn':
+                    links['pissn'] = identifier.get('id', '')
+            
+            # Get fulltext links
+            for link in bibjson.get('link', []):
+                if link.get('type') == 'fulltext':
+                    if link.get('content_type') == 'pdf':
+                        links['pdf'] = link.get('url', '')
+                    else:
+                        links['abstract'] = link.get('url', '')
+            
+            paper['links'] = links
+            
+            papers.append(paper)
+        
+        return papers
+        
+    except Exception as e:
+        print(f"Error parsing DOAJ response: {e}")
+        return []
 
 def parse_doaj_response(data: dict, target_author: str | None = None, target_school: str | None = None):
     # ================================
@@ -676,21 +771,483 @@ def get_papers_from_doaj(name: str | None = None, school: str | None = None):
     
     return unique_papers
 
-def get_papers_from_semantic_scholar(name: str | None = None, school: str | None = None):
-    pass
+def parse_zenodo_response(data: dict, target_author: str | None = None, target_school: str | None = None):
+    # ================================
+    # Example of papers
+    # {
+    #     "paper": {
+    #         "title": "Paper Title",
+    #         "authors": [
+    #             {"name": "Author 1", "affiliation": "Affiliation 1"},
+    #             {"name": "Author 2", "affiliation": "Affiliation 2"}
+    #         ],
+    #         "links": { ... },
+    #         "publication_date": "2023-01-01T00:00:00Z",
+    #         "categories": ["Keyword1", "Keyword2"],
+    #         "journal": "Journal Name",
+    #         "abstract": "Paper abstract text"
+    #     }
+    # }
+    # ================================
+    papers = []
+    
+    try:
+        hits = data.get('hits', {}).get('hits', [])
+        
+        for record in hits:
+            meta = record.get('metadata', {})
+            
+            # authors
+            authors = []
+            author_found = False
+            school_found = False
+            
+            for creator in meta.get('creators', []):
+                # handle both person_or_org and legacy creator formats
+                if 'person_or_org' in creator:
+                    author_name = creator['person_or_org'].get('name', '')
+                    if author_name is None:
+                        author_name = ''
+                    else:
+                        author_name = author_name.strip()
+                    
+                    author_affiliation = ''
+                    if 'affiliation' in creator and creator['affiliation']:
+                        affiliation_name = creator['affiliation'].get('name', '')
+                        if affiliation_name is not None:
+                            author_affiliation = affiliation_name.strip()
+                else:
+                    author_name = creator.get('name', '')
+                    if author_name is None:
+                        author_name = ''
+                    else:
+                        author_name = author_name.strip()
+                    
+                    author_affiliation = ''
+                    if 'affiliation' in creator:
+                        affiliation = creator['affiliation']
+                        if affiliation is not None:
+                            author_affiliation = affiliation.strip()
+                
+                authors.append({"name": author_name, "affiliation": author_affiliation})
+                
+                # check if this author matches our target (handle "Last, First" format)
+                if target_author:
+                    # try direct match first
+                    if target_author.lower() in author_name.lower():
+                        author_found = True
+                    else:
+                        # try matching last name (before comma) or first name (after comma)
+                        name_parts = target_author.split()
+                        if len(name_parts) >= 2:
+                            last_name = name_parts[-1]  # Last part is last name
+                            first_name = ' '.join(name_parts[:-1])  # Everything else is first name
+                            # check if last name matches (before comma in Zenodo format)
+                            if ',' in author_name:
+                                zenodo_last_name = author_name.split(',')[0].strip()
+                                if last_name.lower() in zenodo_last_name.lower():
+                                    author_found = True
+                            # also check if full name matches
+                            if target_author.lower() in author_name.lower():
+                                author_found = True
+                        else:
+                            # single name - check if it matches any part
+                            if target_author.lower() in author_name.lower():
+                                author_found = True
+                
+                if target_school and target_school.lower() in author_affiliation.lower():
+                    school_found = True
+            
+            # only process this paper if the target author is found (or if no target specified)
+            if target_author and not author_found:
+                continue
+            
+            # if school is specified, check if any author has that affiliation
+            if target_school and not school_found:
+                continue
+            
+            # extract paper details
+            paper = {}
+            paper['authors'] = authors
+            paper['id'] = record.get('id', '')
+            
+            # get title
+            paper['title'] = meta.get('title', 'No title')
+            if paper['title'] is None:
+                paper['title'] = 'No title'
+            
+            # get publication date
+            pub_date = meta.get('publication_date') or meta.get('created')
+            paper['publication_date'] = pub_date if pub_date else ''
+            
+            # get journal information
+            journal = meta.get('journal', {})
+            if isinstance(journal, dict) and journal:
+                paper['journal'] = journal.get('title', 'Zenodo')
+                if paper['journal'] is None:
+                    paper['journal'] = 'Zenodo'
+            else:
+                paper['journal'] = 'Zenodo'
+            
+            # get abstract/description
+            paper['abstract'] = meta.get('description', '')
+            if paper['abstract'] is None:
+                paper['abstract'] = ''
+            
+            # Get keywords/categories
+            paper['categories'] = meta.get('keywords', [])
+            if paper['categories'] is None:
+                paper['categories'] = []
+            
+            # get links
+            links = {}
+            
+            # get DOI
+            if 'doi' in meta:
+                links['doi'] = meta['doi']
+            
+            # get PDF links from files
+            if 'files' in record:
+                for f in record['files']:
+                    if f.get('type') == 'pdf' or (f.get('key', '').endswith('.pdf')):
+                        links['pdf'] = f.get('links', {}).get('self', f.get('links', {}).get('download', ''))
+            
+            # get abstract link
+            if 'doi' in links:
+                links['abstract'] = f"https://doi.org/{links['doi']}"
+            elif 'id' in record:
+                links['abstract'] = f"https://zenodo.org/record/{record['id']}"
+            
+            paper['links'] = links
+            
+            papers.append(paper)
+        
+        return papers
+        
+    except Exception as e:
+        print(f"Error parsing Zenodo response: {e}")
+        return []
 
 def get_papers_from_zenodo(name: str | None = None, school: str | None = None):
-    pass
+    import requests
+    import time
+    
+    if not name:
+        print("No author name provided for Zenodo search")
+        return []
+    
+    # Zenodo API base URL
+    base_url = "https://zenodo.org/api/records"
+    
+    # Zenodo search by creator name (exact phrase)
+    # Zenodo uses "Last, First" format for author names
+    search_strategies = [
+        f'metadata.creators.person_or_org.name:"{name}"',
+        f'"{name}"',
+    ]
+    
+    if school:
+        # Add school affiliation search
+        search_strategies.append(f'metadata.creators.person_or_org.name:"{name}" AND metadata.creators.person_or_org.affiliation:"{school}"')
+        search_strategies.append(f'"{name}" "{school}"')
+    
+    all_papers = []
+    
+    for search_query in search_strategies:
+        print(f"Zenodo search: {search_query}")
+        
+        try:
+            # search for papers
+            params = {
+                'q': search_query,
+                'size': 100,  # max per page
+                'page': 1,
+                'sort': 'mostrecent',
+            }
+            
+            for page in range(1, 6):  # get top 5 pages
+                params['page'] = page
+                response = requests.get(base_url, params=params)
+                response.raise_for_status()
+                
+                data = response.json()
+                
+                # debug: print response structure
+                if page == 1:
+                    print(f"Zenodo API response keys: {list(data.keys())}")
+                    if 'hits' in data:
+                        print(f"Hits keys: {list(data['hits'].keys())}")
+                        print(f"Total hits: {data['hits'].get('total', 0)}")
+                
+                # parse the results
+                papers = parse_zenodo_response(data, name, school)
+                all_papers.extend(papers)
+                
+                # check if we need to continue to next page
+                hits = data.get('hits', {}).get('hits', [])
+                if not hits:
+                    if page == 1:
+                        print(f"No papers found for search: {search_query}")
+                    break
+                
+                # if less than 100 results, no more pages
+                if len(hits) < 100:
+                    break
+                
+                # rate limiting
+                time.sleep(0.1)
+            
+        except requests.exceptions.RequestException as e:
+            print(f"HTTP Error for Zenodo search '{search_query}': {e}")
+            continue
+        except Exception as e:
+            print(f"Error processing Zenodo search '{search_query}': {e}")
+            continue
+    
+    # remove duplicates based on DOI and record ID
+    unique_papers = []
+    seen_dois = set()
+    seen_ids = set()
+    
+    for paper in all_papers:
+        is_duplicate = False
+        
+        # check for DOI duplicates
+        if 'links' in paper and 'doi' in paper['links']:
+            doi = paper['links']['doi']
+            if doi in seen_dois:
+                is_duplicate = True
+            else:
+                seen_dois.add(doi)
+        
+        # check for record ID duplicates (if not already marked as duplicate)
+        if not is_duplicate and paper.get('id'):
+            recid = paper['id']
+            if recid in seen_ids:
+                is_duplicate = True
+            else:
+                seen_ids.add(recid)
+        
+        # add paper if it's not a duplicate
+        if not is_duplicate:
+            unique_papers.append(paper)
+    
+    print(f"Total Zenodo papers found: {len(all_papers)}")
+    print(f"Total unique Zenodo papers found: {len(unique_papers)}")
+    
+    return unique_papers
+
+def parse_crossref_response(data: dict, target_author: str | None = None, target_school: str | None = None):
+    # ================================
+    # Example of papers
+    # {
+    #     "paper": {
+    #         "title": "Paper Title",
+    #         "authors": [
+    #             {"name": "Author 1", "affiliation": "Affiliation 1"},
+    #             {"name": "Author 2", "affiliation": "Affiliation 2"}
+    #         ],
+    #         "links": { ... },
+    #         "publication_date": "2023-01-01",
+    #         "categories": ["Keyword1", "Keyword2"],
+    #         "journal": "Journal Name",
+    #         "abstract": "Paper abstract text"
+    #     }
+    # }
+    # ================================
+    papers = []
+    
+    try:
+        items = data.get('message', {}).get('items', [])
+        
+        for item in items:
+            # check if the target author is in the authors list
+            authors = []
+            author_found = False
+            school_found = False
+            
+            for author in item.get('author', []):
+                # handle different author name formats
+                given_name = author.get('given', '').strip()
+                family_name = author.get('family', '').strip()
+                author_name = f"{given_name} {family_name}".strip()
+                author_affiliation = ''
+                
+                # get affiliation from author object
+                if 'affiliation' in author and author['affiliation']:
+                    affiliations = []
+                    for aff in author['affiliation']:
+                        if isinstance(aff, dict) and 'name' in aff:
+                            affiliations.append(aff['name'].strip())
+                        elif isinstance(aff, str):
+                            affiliations.append(aff.strip())
+                    author_affiliation = '; '.join(affiliations)
+                
+                if author_name:
+                    authors.append({"name": author_name, "affiliation": author_affiliation})
+                    
+                    # precise author matching
+                    if target_author:
+                        target_lower = target_author.lower().strip()
+                        author_lower = author_name.lower().strip()
+                        
+                        # check for exact match
+                        if target_lower == author_lower:
+                            author_found = True
+                        
+                        # check for "Last, First" format match
+                        elif ',' in author_lower:
+                            # if author is "B, A" and target is "A B"
+                            author_parts = author_lower.split(',')
+                            if len(author_parts) == 2:
+                                last_name = author_parts[0].strip()
+                                first_name = author_parts[1].strip()
+                                reversed_author = f"{first_name} {last_name}"
+                                if target_lower == reversed_author:
+                                    author_found = True
+                        
+                        # check for "Last First" format (no comma, like "A B")
+                        elif len(author_lower.split()) == 2:
+                            author_parts = author_lower.split()
+                            target_parts = target_lower.split()
+                            if len(target_parts) == 2:
+                                # check if names match in either order
+                                if (author_parts[0] == target_parts[0] and author_parts[1] == target_parts[1]) or \
+                                   (author_parts[0] == target_parts[1] and author_parts[1] == target_parts[0]):
+                                    author_found = True
+                        
+                        # check for initials format (e.g., "P. A" vs "A P")
+                        elif '.' in author_lower and len(target_lower.split()) >= 2:
+                            # if author is "P. A" and target is "A P"
+                            author_parts = author_lower.split()
+                            target_parts = target_lower.split()
+                            
+                            if len(author_parts) == 2 and len(target_parts) >= 2:
+                                # check if first part is initial and last names match
+                                if (author_parts[0].endswith('.') and 
+                                    author_parts[0][0] == target_parts[0][0] and 
+                                    author_parts[1] == target_parts[-1]):
+                                    author_found = True
+                        
+                        # very strict matching - only exact name parts, no partial matches  
+                        else:
+                            target_parts = target_lower.split()
+                            author_parts = author_lower.split()
+                            
+                            # Only match if we have exactly the same name parts
+                            if len(target_parts) == 2 and len(author_parts) == 2:
+                                # Both parts must match exactly (in either order)
+                                if (target_parts[0] == author_parts[0] and target_parts[1] == author_parts[1]) or \
+                                   (target_parts[0] == author_parts[1] and target_parts[1] == author_parts[0]):
+                                    author_found = True
+                    
+                    # check if school/affiliation matches
+                    if target_school and target_school.lower() in author_affiliation.lower():
+                        school_found = True
+            
+            # only process this paper if the target author is found (or if no target specified)
+            if target_author and not author_found:
+                continue
+            
+            # if school is specified, check if any author has that affiliation
+            if target_school and not school_found:
+                continue
+            
+            # extract paper details
+            paper = {}
+            paper['authors'] = authors
+            
+            # get title
+            title_parts = []
+            for title in item.get('title', []):
+                if title:
+                    title_parts.append(title.strip())
+            paper['title'] = ' '.join(title_parts) if title_parts else 'No title'
+            
+            # get publication date
+            pub_date = item.get('published-print', {}).get('date-parts', [[]])[0]
+            if pub_date:
+                if len(pub_date) >= 3:
+                    paper['publication_date'] = f"{pub_date[0]}-{str(pub_date[1]).zfill(2)}-{str(pub_date[2]).zfill(2)}"
+                elif len(pub_date) >= 2:
+                    paper['publication_date'] = f"{pub_date[0]}-{str(pub_date[1]).zfill(2)}"
+                elif len(pub_date) >= 1:
+                    paper['publication_date'] = str(pub_date[0])
+            
+            # get journal information
+            container = item.get('container-title', [])
+            paper['journal'] = container[0] if container else 'No journal'
+            
+            # get abstract
+            abstract = item.get('abstract', '')
+            if abstract:
+                paper['abstract'] = abstract.strip()
+            else:
+                paper['abstract'] = ''
+            
+            # get keywords/subject categories
+            paper['categories'] = item.get('subject', [])
+            
+            # get links
+            links = {}
+            
+            # get DOI
+            doi = item.get('DOI', '')
+            if doi:
+                links['doi'] = doi
+                links['abstract'] = f"https://doi.org/{doi}"
+            
+            # get PDF links if available
+            if 'link' in item:
+                for link in item['link']:
+                    if link.get('content-type') == 'application/pdf':
+                        links['pdf'] = link.get('URL', '')
+                    elif link.get('intended-application') == 'text-mining':
+                        links['fulltext'] = link.get('URL', '')
+            
+            paper['links'] = links
+            
+            papers.append(paper)
+        
+        return papers
+        
+    except Exception as e:
+        print(f"Error parsing Crossref response: {e}")
+        return []
 
 def get_papers_from_crossref(name: str | None = None, school: str | None = None):
-    pass
-
-
-
-
-# arXiv (have to include "Thank you to arXiv for use of its open access interoperability.")
-# PubMed (NCBI API)
-# Google Scholar (will be using scholarly, no official API)
-# DOAJ (found)
-# Semantic Scholar
-# Zenodo 
+    import requests
+    import urllib.parse
+    
+    if not name:
+        print("No author name provided for Crossref search")
+        return []
+    
+    # crossref API base URL
+    base_url = "https://api.crossref.org/works"
+    
+    # simple query using query.author parameter
+    search_query = name.replace(' ', '+')  # replace spaces with + for URL encoding
+    
+    print(f"Crossref search: query.author={search_query}")
+    
+    try:
+        # make the API request
+        url = f"{base_url}?query.author={search_query}"
+        response = requests.get(url)
+        response.raise_for_status()
+        
+        data = response.json()
+        
+        # parse the results
+        papers = parse_crossref_response(data, name, school)
+        
+        print(f"Found {len(papers)} papers from Crossref")
+        return papers
+        
+    except requests.exceptions.RequestException as e:
+        print(f"HTTP Error for Crossref search: {e}")
+        return []
+    except Exception as e:
+        print(f"Error processing Crossref search: {e}")
+        return []

@@ -5,8 +5,8 @@
 # - school: str
 
 def test_print_query(query: dict):
-    print(f"Name: {query['name']}")
-    print(f"School: {query['school']}")
+    print(f"Name: {query.get('name', 'Not specified')}")
+    print(f"School: {query.get('school', 'Not specified')}")
 
 def test_print_papers(papers: list):
     if not papers:
@@ -19,9 +19,29 @@ def test_print_papers(papers: list):
     for i, paper in enumerate(papers, 1):
         print(f"\nPaper {i}:")
         print(f"Title: {paper.get('title', 'No title')}")
-        print(f"Authors: {', '.join(paper.get('authors', ['No authors']))}")
+        
+        # Handle authors properly
+        authors = paper.get('authors', [])
+        if authors:
+            author_names = []
+            for author in authors:
+                if isinstance(author, dict):
+                    author_names.append(author.get('name', 'Unknown'))
+                else:
+                    author_names.append(str(author))
+            print(f"Authors: {', '.join(author_names)}")
+        else:
+            print("Authors: No authors")
+            
         print(f"Publication Date: {paper.get('publication_date', 'No date')}")
-        print(f"Categories: {', '.join(paper.get('categories', ['No categories']))}")
+        
+        # Handle categories properly
+        categories = paper.get('categories', [])
+        if categories:
+            print(f"Categories: {', '.join(categories)}")
+        else:
+            print("Categories: No categories")
+            
         print(f"Journal: {paper.get('journal', 'No journal')}")
         
         # Handle different link types
@@ -33,8 +53,6 @@ def test_print_papers(papers: list):
                 print(f"PubMed ID: {links.get('pmid', 'No ID')}")
             elif 'scholar_id' in links:
                 print(f"Scholar ID: {links.get('scholar_id', 'No ID')}")
-                if 'citation_count' in paper:
-                    print(f"Citations: {paper['citation_count']}")
             
             # Print DOI if available
             if 'doi' in links:
@@ -51,6 +69,55 @@ def test_print_papers(papers: list):
         print("-"*100)
 
 def get_papers(query: dict):
+    # ================================
+    # Example of papers returned by this function
+    # [
+    #     {
+    #         "title": "Attention Is All You Need",
+    #         "authors": [
+    #             {"name": "Ashish Vaswani", "affiliation": "Google Brain"},
+    #             {"name": "Noam Shazeer", "affiliation": "Google Brain"},
+    #             {"name": "Niki Parmar", "affiliation": "Google Brain"},
+    #             {"name": "Jakob Uszkoreit", "affiliation": "Google Research"},
+    #             {"name": "Llion Jones", "affiliation": "Google Brain"},
+    #             {"name": "Aidan N. Gomez", "affiliation": "University of Toronto"},
+    #             {"name": "Łukasz Kaiser", "affiliation": "Google Brain"},
+    #             {"name": "Illia Polosukhin", "affiliation": "Google Research"}
+    #         ],
+    #         "publication_date": "2017-06-12T00:00:00Z",
+    #         "categories": ["cs.CL", "cs.AI", "cs.LG"],
+    #         "journal": "arXiv",
+    #         "abstract": "The dominant sequence transduction models are based on complex recurrent or convolutional neural networks in an encoder-decoder configuration. The best performing models also connect the encoder and decoder through an attention mechanism. We propose a new simple network architecture, the Transformer, based solely on attention mechanisms, dispensing with recurrence and convolutions entirely...",
+    #         "links": {
+    #             "doi": "10.48550/arXiv.1706.03762",
+    #             "pdf": "https://arxiv.org/pdf/1706.03762",
+    #             "abstract": "https://arxiv.org/abs/1706.03762",
+    #             "arxiv_id": "1706.03762"
+    #         }
+    #     },
+    #     {
+    #         "title": "BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding",
+    #         "authors": [
+    #             {"name": "Jacob Devlin", "affiliation": "Google AI Language"},
+    #             {"name": "Ming-Wei Chang", "affiliation": "Google AI Language"},
+    #             {"name": "Kenton Lee", "affiliation": "Google AI Language"},
+    #             {"name": "Kristina Toutanova", "affiliation": "Google AI Language"}
+    #         ],
+    #         "publication_date": "2018-10-11T00:00:00Z",
+    #         "categories": ["cs.CL", "cs.AI"],
+    #         "journal": "arXiv",
+    #         "abstract": "We introduce a new language representation model called BERT, which stands for Bidirectional Encoder Representations from Transformers. Unlike recent language representation models, BERT is designed to pre-train deep bidirectional representations from unlabeled text by jointly conditioning on both left and right context in all layers...",
+    #         "links": {
+    #             "doi": "10.48550/arXiv.1810.04805",
+    #             "pdf": "https://arxiv.org/pdf/1810.04805",
+    #             "abstract": "https://arxiv.org/abs/1810.04805",
+    #             "arxiv_id": "1810.04805"
+    #         }
+    #     }
+    # ]
+    # Note: Some sources (DOAJ, Zenodo) may include an "id" field, but not useful
+    # ================================
+    
     # ================================
     # Parse Query
     # ================================
@@ -71,14 +138,14 @@ def get_papers(query: dict):
     papers.extend(get_papers_from_doaj(name, school) or [])
     papers.extend(get_papers_from_zenodo(name, school) or [])
     papers.extend(get_papers_from_crossref(name, school) or [])
-    test_print_papers(papers)
-    # get rid of duplicates
-    pass
-
-    # ================================
-    # Get Keywords/Topics
-    # ================================
-    pass
+    
+    # print(f"\nTotal papers found before deduplication: {len(papers)}")
+    
+    # Deduplicate papers based on DOI first, then title
+    papers = deduplicate_papers(papers)
+    
+    # print(f"Total unique papers after deduplication: {len(papers)}") 
+    return papers
 
 def parse_arxiv_response(response: str, target_author: str | None = None):
     # ================================
@@ -185,7 +252,7 @@ def get_papers_from_arxiv(name: str | None = None, school: str | None = None):
     all_papers = []
     
     for search_query in search_strategies:
-        print(f"Trying search: {search_query}")
+        # print(f"Trying search: {search_query}")
         
         encoded_search_terms = urllib.parse.quote(search_query)
         url = f"http://export.arxiv.org/api/query?search_query={encoded_search_terms}&max_results=100"
@@ -204,39 +271,7 @@ def get_papers_from_arxiv(name: str | None = None, school: str | None = None):
             print(f"HTTP Error for search '{search_query}': {e}")
             continue
     
-    # Remove duplicates based on arXiv ID and DOI
-    unique_papers = []
-    seen_ids = set()
-    seen_dois = set()
-    
-    for paper in all_papers:
-        is_duplicate = False
-        
-        # Check for arXiv ID duplicates
-        if 'links' in paper and 'arxiv_id' in paper['links']:
-            arxiv_id = paper['links']['arxiv_id']
-            if arxiv_id in seen_ids:
-                is_duplicate = True
-            else:
-                seen_ids.add(arxiv_id)
-        
-        # Check for DOI duplicates (if not already marked as duplicate)
-        if not is_duplicate and 'links' in paper and 'doi' in paper['links']:
-            doi = paper['links']['doi']
-            if doi in seen_dois:
-                is_duplicate = True
-            else:
-                seen_dois.add(doi)
-        
-        # Add paper if it's not a duplicate
-        if not is_duplicate:
-            unique_papers.append(paper)
-    
-    # print(f"Total papers found: {len(all_papers)}")
-    # print(f"Total unique papers found: {len(unique_papers)}")
-    # print(f"Deduplication stats: {len(seen_ids)} unique arXiv IDs, {len(seen_dois)} unique DOIs")
-    
-    return unique_papers
+    return all_papers
 
 def parse_pubmed_response(response: str, target_author: str):
     # ================================
@@ -353,7 +388,7 @@ def get_papers_from_pubmed(name: str | None = None, school: str | None = None):
     all_papers = []
     
     for search_query in search_strategies:
-        print(f"PubMed search: {search_query}")
+        # print(f"PubMed search: {search_query}")
         
         try:
             # Search for papers and get PMIDs
@@ -382,7 +417,7 @@ def get_papers_from_pubmed(name: str | None = None, school: str | None = None):
                 print(f"No papers found for search: {search_query}")
                 continue
             
-            print(f"Found {len(pmids)} papers for search: {search_query}")
+            # print(f"Found {len(pmids)} papers for search: {search_query}")
             
             # Fetch detailed information for each paper
             batch_size = 20
@@ -414,39 +449,7 @@ def get_papers_from_pubmed(name: str | None = None, school: str | None = None):
             print(f"XML Parse Error for PubMed search '{search_query}': {e}")
             continue
     
-    # Remove duplicates based on PMID and DOI
-    unique_papers = []
-    seen_pmids = set()
-    seen_dois = set()
-    
-    for paper in all_papers:
-        is_duplicate = False
-        
-        # Check for PMID duplicates
-        if 'links' in paper and 'pmid' in paper['links']:
-            pmid = paper['links']['pmid']
-            if pmid in seen_pmids:
-                is_duplicate = True
-            else:
-                seen_pmids.add(pmid)
-        
-        # Check for DOI duplicates (if not already marked as duplicate)
-        if not is_duplicate and 'links' in paper and 'doi' in paper['links']:
-            doi = paper['links']['doi']
-            if doi in seen_dois:
-                is_duplicate = True
-            else:
-                seen_dois.add(doi)
-        
-        # Add paper if it's not a duplicate
-        if not is_duplicate:
-            unique_papers.append(paper)
-    
-    # print(f"Total papers found: {len(all_papers)}")
-    # print(f"Total unique PubMed papers found: {len(unique_papers)}")
-    # print(f"PubMed deduplication stats: {len(seen_pmids)} unique PMIDs, {len(seen_dois)} unique DOIs")
-    
-    return unique_papers
+    return all_papers
 
 def parse_doaj_response(data: dict, target_author: str | None = None, target_school: str | None = None):
     # ================================
@@ -692,7 +695,7 @@ def get_papers_from_doaj(name: str | None = None, school: str | None = None):
     all_papers = []
     
     for search_query in search_strategies:
-        print(f"DOAJ search: {search_query}")
+        # print(f"DOAJ search: {search_query}")
         
         try:
             # Search for papers - DOAJ uses path-based search
@@ -711,7 +714,7 @@ def get_papers_from_doaj(name: str | None = None, school: str | None = None):
                 print(f"No papers found for search: {search_query}")
                 continue
             
-            print(f"Found {data.get('total', 0)} papers for search: {search_query}")
+            # print(f"Found {data.get('total', 0)} papers for search: {search_query}")
             
             # Parse the results
             papers = parse_doaj_response(data, name, school)
@@ -738,38 +741,9 @@ def get_papers_from_doaj(name: str | None = None, school: str | None = None):
             print(f"Error processing DOAJ search '{search_query}': {e}")
             continue
     
-    # Remove duplicates based on DOI and article ID
-    unique_papers = []
-    seen_dois = set()
-    seen_ids = set()
+    # print(f"Total DOAJ papers found: {len(all_papers)}")
     
-    for paper in all_papers:
-        is_duplicate = False
-        
-        # Check for DOI duplicates
-        if 'links' in paper and 'doi' in paper['links']:
-            doi = paper['links']['doi']
-            if doi in seen_dois:
-                is_duplicate = True
-            else:
-                seen_dois.add(doi)
-        
-        # Check for article ID duplicates (if not already marked as duplicate)
-        if not is_duplicate and paper.get('id'):
-            article_id = paper['id']
-            if article_id in seen_ids:
-                is_duplicate = True
-            else:
-                seen_ids.add(article_id)
-        
-        # Add paper if it's not a duplicate
-        if not is_duplicate:
-            unique_papers.append(paper)
-    
-    print(f"Total DOAJ papers found: {len(all_papers)}")
-    print(f"Total unique DOAJ papers found: {len(unique_papers)}")
-    
-    return unique_papers
+    return all_papers
 
 def parse_zenodo_response(data: dict, target_author: str | None = None, target_school: str | None = None):
     # ================================
@@ -954,7 +928,7 @@ def get_papers_from_zenodo(name: str | None = None, school: str | None = None):
     all_papers = []
     
     for search_query in search_strategies:
-        print(f"Zenodo search: {search_query}")
+        # print(f"Zenodo search: {search_query}")
         
         try:
             # search for papers
@@ -974,10 +948,11 @@ def get_papers_from_zenodo(name: str | None = None, school: str | None = None):
                 
                 # debug: print response structure
                 if page == 1:
-                    print(f"Zenodo API response keys: {list(data.keys())}")
+                    # print(f"Zenodo API response keys: {list(data.keys())}")
                     if 'hits' in data:
-                        print(f"Hits keys: {list(data['hits'].keys())}")
-                        print(f"Total hits: {data['hits'].get('total', 0)}")
+                        # print(f"Hits keys: {list(data['hits'].keys())}")
+                        # print(f"Total hits: {data['hits'].get('total', 0)}")
+                        pass
                 
                 # parse the results
                 papers = parse_zenodo_response(data, name, school)
@@ -987,7 +962,8 @@ def get_papers_from_zenodo(name: str | None = None, school: str | None = None):
                 hits = data.get('hits', {}).get('hits', [])
                 if not hits:
                     if page == 1:
-                        print(f"No papers found for search: {search_query}")
+                        # print(f"No papers found for search: {search_query}")
+                        pass
                     break
                 
                 # if less than 100 results, no more pages
@@ -1004,38 +980,9 @@ def get_papers_from_zenodo(name: str | None = None, school: str | None = None):
             print(f"Error processing Zenodo search '{search_query}': {e}")
             continue
     
-    # remove duplicates based on DOI and record ID
-    unique_papers = []
-    seen_dois = set()
-    seen_ids = set()
+    # print(f"Total Zenodo papers found: {len(all_papers)}")
     
-    for paper in all_papers:
-        is_duplicate = False
-        
-        # check for DOI duplicates
-        if 'links' in paper and 'doi' in paper['links']:
-            doi = paper['links']['doi']
-            if doi in seen_dois:
-                is_duplicate = True
-            else:
-                seen_dois.add(doi)
-        
-        # check for record ID duplicates (if not already marked as duplicate)
-        if not is_duplicate and paper.get('id'):
-            recid = paper['id']
-            if recid in seen_ids:
-                is_duplicate = True
-            else:
-                seen_ids.add(recid)
-        
-        # add paper if it's not a duplicate
-        if not is_duplicate:
-            unique_papers.append(paper)
-    
-    print(f"Total Zenodo papers found: {len(all_papers)}")
-    print(f"Total unique Zenodo papers found: {len(unique_papers)}")
-    
-    return unique_papers
+    return all_papers
 
 def parse_crossref_response(data: dict, target_author: str | None = None, target_school: str | None = None):
     # ================================
@@ -1229,7 +1176,7 @@ def get_papers_from_crossref(name: str | None = None, school: str | None = None)
     # simple query using query.author parameter
     search_query = name.replace(' ', '+')  # replace spaces with + for URL encoding
     
-    print(f"Crossref search: query.author={search_query}")
+    # print(f"Crossref search: query.author={search_query}")
     
     try:
         # make the API request
@@ -1242,7 +1189,7 @@ def get_papers_from_crossref(name: str | None = None, school: str | None = None)
         # parse the results
         papers = parse_crossref_response(data, name, school)
         
-        print(f"Found {len(papers)} papers from Crossref")
+        # print(f"Found {len(papers)} papers from Crossref")
         return papers
         
     except requests.exceptions.RequestException as e:
@@ -1251,3 +1198,116 @@ def get_papers_from_crossref(name: str | None = None, school: str | None = None)
     except Exception as e:
         print(f"Error processing Crossref search: {e}")
         return []
+
+def deduplicate_papers(papers: list) -> list:
+    # check if papers is empty
+    if not papers:
+        return []
+    
+    # group papers by DOI first, then by title
+    doi_groups = {}
+    title_groups = {}
+    
+    for paper in papers:
+        # try to group by DOI first
+        doi = None
+        if 'links' in paper and 'doi' in paper['links']:
+            doi = paper['links']['doi'].lower().strip()
+        
+        if doi:
+            if doi not in doi_groups:
+                doi_groups[doi] = []
+            doi_groups[doi].append(paper)
+        else:
+            # if no DOI, group by title
+            title = paper.get('title', '').lower().strip()
+            if title and title != 'no title':
+                if title not in title_groups:
+                    title_groups[title] = []
+                title_groups[title].append(paper)
+            else:
+                # if no title either, treat as unique
+                if 'no_title_group' not in title_groups:
+                    title_groups['no_title_group'] = []
+                title_groups['no_title_group'].append(paper)
+    
+    # merge papers within each group
+    unique_papers = []
+    
+    # process DOI groups first
+    for doi, group in doi_groups.items():
+        if len(group) == 1:
+            unique_papers.append(group[0])
+        else:
+            # merge multiple papers with same DOI
+            merged_paper = merge_paper_group(group)
+            unique_papers.append(merged_paper)
+    
+    # process title groups
+    for title, group in title_groups.items():
+        if title == 'no_title_group':
+            # add papers without title as-is
+            unique_papers.extend(group)
+        elif len(group) == 1:
+            unique_papers.append(group[0])
+        else:
+            # merge multiple papers with same title
+            merged_paper = merge_paper_group(group)
+            unique_papers.append(merged_paper)
+    return unique_papers
+
+def merge_paper_group(papers: list) -> dict:
+    # check if papers is empty
+    if not papers:
+        return {}
+    
+    if len(papers) == 1:
+        return papers[0]
+    
+    # start with the first paper as base
+    merged = papers[0].copy()
+    
+    for paper in papers[1:]:
+        # merge authors - combine unique authors with affiliations
+        if 'authors' in paper and paper['authors']:
+            if 'authors' not in merged:
+                merged['authors'] = []
+            
+            existing_authors = {author['name'].lower(): author for author in merged['authors']}
+            
+            for author in paper['authors']:
+                author_name_lower = author['name'].lower()
+                if author_name_lower in existing_authors:
+                    # author exists, merge affiliations if available
+                    existing_author = existing_authors[author_name_lower]
+                    if not existing_author.get('affiliation') and author.get('affiliation'):
+                        existing_author['affiliation'] = author['affiliation']
+                else:
+                    # new author, add to list
+                    merged['authors'].append(author)
+        
+        # merge links - preserve all available links
+        if 'links' in paper and paper['links']:
+            if 'links' not in merged:
+                merged['links'] = {}
+            
+            for link_type, link_value in paper['links'].items():
+                if link_value and (link_type not in merged['links'] or not merged['links'][link_type]):
+                    merged['links'][link_type] = link_value
+        
+        # merge categories/keywords - combine unique categories
+        if 'categories' in paper and paper['categories']:
+            if 'categories' not in merged:
+                merged['categories'] = []
+            
+            existing_categories = set(cat.lower() for cat in merged['categories'])
+            for category in paper['categories']:
+                if category.lower() not in existing_categories:
+                    merged['categories'].append(category)
+        
+        # merge other fields - prefer non-empty values
+        for field in ['title', 'journal', 'abstract', 'publication_date']:
+            if field in paper and paper[field] and (field not in merged or not merged[field]):
+                merged[field] = paper[field]
+
+    return merged

@@ -440,7 +440,7 @@ def get_papers_from_pubmed(name: str | None = None, school: str | None = None):
                 all_papers.extend(papers)
                 
                 # NCBI's rate limiting (3 requests per second)
-                time.sleep(0.35)
+                time.sleep(0.4)
             
         except requests.exceptions.RequestException as e:
             print(f"HTTP Error for PubMed search '{search_query}': {e}")

@@ -3,12 +3,18 @@ import requests
 import time
 import xml.etree.ElementTree as ET
 import logging
+from datetime import datetime
 
-# TODO: remove affiliation from parsing in doaj, zenodo, and crossref
-# TODO: check deduplication
-
-# Configure logging
-logging.basicConfig(level=logging.INFO)
+# Configure logging to file
+log_filename = f"paper_collector_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(log_filename),
+        logging.StreamHandler()
+    ]
+)
 logger = logging.getLogger(__name__)
 
 class PaperCollector:
@@ -34,6 +40,7 @@ class PaperCollector:
         Returns:
             List of paper dictionaries
         """
+        logger.info("=== START: get_papers ===")
 
         papers = []
         papers.extend(self._get_papers_from_arxiv() or [])
@@ -45,6 +52,7 @@ class PaperCollector:
         # Fine unique papers based on DOI, then title
         papers = self._deduplicate_papers(papers)
 
+        logger.info(f"=== FINISH: get_papers - Found {len(papers)} total papers ===")
         return papers
     
     def print_papers(self, papers: list):
@@ -106,8 +114,11 @@ class PaperCollector:
     
     def _get_papers_from_arxiv(self):
         """Get papers from arXiv"""
+        logger.info("=== START: _get_papers_from_arxiv ===")
+        
         if not self.name:
-            print("No author name provided")
+            logger.warning("No author name provided")
+            logger.info("=== FINISH: _get_papers_from_arxiv - No papers found ===")
             return []
 
         # Define more specific search terms
@@ -116,8 +127,8 @@ class PaperCollector:
             f'au:{self.name}',    # Standard search
         ]
         
+        # Add school affiliation if provided (optional)
         if self.school:
-            # Add school affiliation
             search_strategies.append(f'au:"{self.name}" AND aff:"{self.school}"')
             search_strategies.append(f'au:{self.name} OR aff:{self.school}')
 
@@ -136,13 +147,15 @@ class PaperCollector:
                 all_papers.extend(papers)
                 
             except requests.exceptions.RequestException as e:
-                print(f"HTTP Error for search '{search_query}': {e}")
+                logger.error(f"HTTP Error for search '{search_query}': {e}")
                 continue
         
+        logger.info(f"=== FINISH: _get_papers_from_arxiv - Found {len(all_papers)} papers ===")
         return all_papers
     
     def _parse_arxiv_response(self, response: str):
         """Parse arXiv XML response"""
+        logger.info("=== START: _parse_arxiv_response ===")
         papers = []
         try:
             root = ET.fromstring(response)
@@ -165,7 +178,7 @@ class PaperCollector:
                         if self.name and self.name.lower() in author_name.lower():
                             author_found = True
 
-                if self.name and not author_found:
+                if not author_found:
                     continue
 
                 paper = {}
@@ -206,18 +219,22 @@ class PaperCollector:
 
                 papers.append(paper)
 
+            logger.info(f"=== FINISH: _parse_arxiv_response - Parsed {len(papers)} papers ===")
             return papers
         except ET.ParseError as e:
-            print(f"Error parsing XML: {e}")
+            logger.error(f"Error parsing XML: {e}")
             return []
         except Exception as e:
-            print(f"Error processing arXiv response: {e}")
+            logger.error(f"Error processing arXiv response: {e}")
             return []
     
     def _get_papers_from_pubmed(self):
         """Get papers from PubMed"""
+        logger.info("=== START: _get_papers_from_pubmed ===")
+        
         if not self.name:
-            print("No author name provided for PubMed search")
+            logger.warning("No author name provided for PubMed search")
+            logger.info("=== FINISH: _get_papers_from_pubmed - No papers found ===")
             return []
         
         # NCBI API base URL
@@ -229,8 +246,8 @@ class PaperCollector:
             f'{self.name}[Author]',    # Standard search
         ]
         
+        # Add school affiliation if provided (optional)
         if self.school:
-            # Add school affiliation
             search_strategies.append(f'"{self.name}"[Author] AND "{self.school}"[Affiliation]')
             search_strategies.append(f'{self.name}[Author] AND {self.school}[Affiliation]')
         
@@ -261,7 +278,7 @@ class PaperCollector:
                         pmids.append(id_elem.text)
                 
                 if not pmids:
-                    print(f"No papers found for search: {search_query}")
+                    logger.info(f"No papers found for search: {search_query}")
                     continue
                 
                 # Get detailed information for each paper
@@ -288,16 +305,18 @@ class PaperCollector:
                     time.sleep(0.4)
                 
             except requests.exceptions.RequestException as e:
-                print(f"HTTP Error for PubMed search '{search_query}': {e}")
+                logger.error(f"HTTP Error for PubMed search '{search_query}': {e}")
                 continue
             except ET.ParseError as e:
-                print(f"XML Parse Error for PubMed search '{search_query}': {e}")
+                logger.error(f"XML Parse Error for PubMed search '{search_query}': {e}")
                 continue
         
+        logger.info(f"=== FINISH: _get_papers_from_pubmed - Found {len(all_papers)} papers ===")
         return all_papers
     
     def _parse_pubmed_response(self, response: str):
         """Parse PubMed XML response"""
+        logger.info("=== START: _parse_pubmed_response ===")
         papers = []
 
         try:
@@ -381,19 +400,23 @@ class PaperCollector:
 
                 papers.append(paper)
 
+            logger.info(f"=== FINISH: _parse_pubmed_response - Parsed {len(papers)} papers ===")
             return papers
         
         except ET.ParseError as e:
-            print(f"Error parsing PubMed XML: {e}")
+            logger.error(f"Error parsing PubMed XML: {e}")
             return []
         except Exception as e:
-            print(f"Error processing PubMed response: {e}")
+            logger.error(f"Error processing PubMed response: {e}")
             return []
     
     def _get_papers_from_doaj(self):
         """Get papers from DOAJ"""
+        logger.info("=== START: _get_papers_from_doaj ===")
+        
         if not self.name:
-            print("No author name provided for DOAJ search")
+            logger.warning("No author name provided for DOAJ search")
+            logger.info("=== FINISH: _get_papers_from_doaj - No papers found ===")
             return []
         
         # Define API base URL
@@ -405,8 +428,8 @@ class PaperCollector:
             f'"{self.name}"',  # Exact match
         ]
         
+        # Add school affiliation if provided (optional)
         if self.school:
-            # Add school affiliation
             search_strategies.append(f'{self.name} {self.school}')
             search_strategies.append(f'"{self.name}" "{self.school}"')
         
@@ -427,7 +450,7 @@ class PaperCollector:
                 data = response.json()
                 
                 if data.get('total', 0) == 0:
-                    print(f"No papers found for search: {search_query}")
+                    logger.info(f"No papers found for search: {search_query}")
                     continue
                 
                 # Parse the results
@@ -449,16 +472,18 @@ class PaperCollector:
                     time.sleep(0.1)
                 
             except requests.exceptions.RequestException as e:
-                print(f"HTTP Error for DOAJ search '{search_query}': {e}")
+                logger.error(f"HTTP Error for DOAJ search '{search_query}': {e}")
                 continue
             except Exception as e:
-                print(f"Error processing DOAJ search '{search_query}': {e}")
+                logger.error(f"Error processing DOAJ search '{search_query}': {e}")
                 continue
         
+        logger.info(f"=== FINISH: _get_papers_from_doaj - Found {len(all_papers)} papers ===")
         return all_papers
     
     def _parse_doaj_response(self, data: dict):
         """Parse DOAJ response"""
+        logger.info("=== START: _parse_doaj_response ===")
         papers = []
         
         try:
@@ -468,7 +493,6 @@ class PaperCollector:
                 # Check if author is in the list
                 authors = []
                 author_found = False
-                school_found = False
                 
                 for author in bibjson.get('author', []):
                     author_name = author.get('name', '').strip()
@@ -480,17 +504,9 @@ class PaperCollector:
                         # Check if this author matches the target
                         if self.name and self.name.lower() in author_name.lower():
                             author_found = True
-                        
-                        # Check if school/affiliation matches
-                        if self.school and self.school.lower() in author_affiliation.lower():
-                            school_found = True
                 
                 # Only process this paper if the target author is found (or if no target specified)
-                if self.name and not author_found:
-                    continue
-                
-                # If school is specified, check if any author has that affiliation
-                if self.school and not school_found:
+                if not author_found:
                     continue
                 
                 # Extract paper details
@@ -537,16 +553,20 @@ class PaperCollector:
                 
                 papers.append(paper)
             
+            logger.info(f"=== FINISH: _parse_doaj_response - Parsed {len(papers)} papers ===")
             return papers
             
         except Exception as e:
-            print(f"Error parsing DOAJ response: {e}")
+            logger.error(f"Error parsing DOAJ response: {e}")
             return []
     
     def _get_papers_from_zenodo(self):
         """Get papers from Zenodo"""
+        logger.info("=== START: _get_papers_from_zenodo ===")
+        
         if not self.name:
-            print("No author name provided for Zenodo search")
+            logger.warning("No author name provided for Zenodo search")
+            logger.info("=== FINISH: _get_papers_from_zenodo - No papers found ===")
             return []
         
         # Define API base URL
@@ -558,8 +578,8 @@ class PaperCollector:
             f'"{self.name}"',
         ]
         
+        # Add school affiliation if provided (optional)
         if self.school:
-            # Add school affiliation
             search_strategies.append(f'metadata.creators.person_or_org.name:"{self.name}" AND metadata.creators.person_or_org.affiliation:"{self.school}"')
             search_strategies.append(f'"{self.name}" "{self.school}"')
         
@@ -601,16 +621,18 @@ class PaperCollector:
                     time.sleep(0.1)
                 
             except requests.exceptions.RequestException as e:
-                print(f"HTTP Error for Zenodo search '{search_query}': {e}")
+                logger.error(f"HTTP Error for Zenodo search '{search_query}': {e}")
                 continue
             except Exception as e:
-                print(f"Error processing Zenodo search '{search_query}': {e}")
+                logger.error(f"Error processing Zenodo search '{search_query}': {e}")
                 continue
         
+        logger.info(f"=== FINISH: _get_papers_from_zenodo - Found {len(all_papers)} papers ===")
         return all_papers
     
     def _parse_zenodo_response(self, data: dict):
         """Parse Zenodo response"""
+        logger.info("=== START: _parse_zenodo_response ===")
         papers = []
         
         try:
@@ -621,7 +643,6 @@ class PaperCollector:
                 
                 authors = []
                 author_found = False
-                school_found = False
                 
                 for creator in meta.get('creators', []):
                     # Handle both person_or_org and legacy creator formats
@@ -678,16 +699,9 @@ class PaperCollector:
                                 # Check if it matches the full name
                                 if self.name.lower() in author_name.lower():
                                     author_found = True
-                    
-                    if self.school and self.school.lower() in author_affiliation.lower():
-                        school_found = True
                 
                 # Process this paper if the target author is found 
-                if self.name and not author_found:
-                    continue
-                
-                # If school is specified, check if any author has that affiliation
-                if self.school and not school_found:
+                if not author_found:
                     continue
                 
                 # Extract paper details
@@ -746,16 +760,20 @@ class PaperCollector:
                 
                 papers.append(paper)
             
+            logger.info(f"=== FINISH: _parse_zenodo_response - Parsed {len(papers)} papers ===")
             return papers
             
         except Exception as e:
-            print(f"Error parsing Zenodo response: {e}")
+            logger.error(f"Error parsing Zenodo response: {e}")
             return []
     
     def _get_papers_from_crossref(self):
         """Get papers from Crossref"""
+        logger.info("=== START: _get_papers_from_crossref ===")
+        
         if not self.name:
-            print("No author name provided for Crossref search")
+            logger.warning("No author name provided for Crossref search")
+            logger.info("=== FINISH: _get_papers_from_crossref - No papers found ===")
             return []
         
         # Define API base URL
@@ -778,14 +796,15 @@ class PaperCollector:
             return papers
             
         except requests.exceptions.RequestException as e:
-            print(f"HTTP Error for Crossref search: {e}")
+            logger.error(f"HTTP Error for Crossref search: {e}")
             return []
         except Exception as e:
-            print(f"Error processing Crossref search: {e}")
+            logger.error(f"Error processing Crossref search: {e}")
             return []
     
     def _parse_crossref_response(self, data: dict):
         """Parse Crossref response"""
+        logger.info("=== START: _parse_crossref_response ===")
         papers = []
         
         try:
@@ -795,7 +814,6 @@ class PaperCollector:
                 # Check if the target author is in the authors list
                 authors = []
                 author_found = False
-                school_found = False
                 
                 for author in item.get('author', []):
                     # Handle different author name formats
@@ -870,17 +888,9 @@ class PaperCollector:
                                     if (target_parts[0] == author_parts[0] and target_parts[1] == author_parts[1]) or \
                                        (target_parts[0] == author_parts[1] and target_parts[1] == author_parts[0]):
                                         author_found = True
-                        
-                        # Check if school/affiliation matches
-                        if self.school and self.school.lower() in author_affiliation.lower():
-                            school_found = True
                 
                 # Process this paper if the target author is found 
-                if self.name and not author_found:
-                    continue
-                
-                # If school is specified, check if any author has that affiliation
-                if self.school and not school_found:
+                if not author_found:
                     continue
                 
                 # Extract paper details
@@ -939,16 +949,20 @@ class PaperCollector:
                 
                 papers.append(paper)
             
+            logger.info(f"=== FINISH: _parse_crossref_response - Parsed {len(papers)} papers ===")
             return papers
             
         except Exception as e:
-            print(f"Error parsing Crossref response: {e}")
+            logger.error(f"Error parsing Crossref response: {e}")
             return []
     
     def _deduplicate_papers(self, papers: list) -> list:
         """Deduplicate papers based on DOI, then title"""
+        logger.info("=== START: _deduplicate_papers ===")
+        
         # Check if papers is empty
         if not papers:
+            logger.info("=== FINISH: _deduplicate_papers - No papers to deduplicate ===")
             return []
         
         # Group papers by DOI, then by title
@@ -1007,12 +1021,16 @@ class PaperCollector:
                 merged_paper = self._merge_paper_group(group)
                 unique_papers.append(merged_paper)
 
+        logger.info(f"=== FINISH: _deduplicate_papers - {len(papers)} papers reduced to {len(unique_papers)} unique papers ===")
         return unique_papers
     
     def _merge_paper_group(self, papers: list) -> dict:
         """Merge multiple papers with the same DOI or title"""
+        logger.info("=== START: _merge_paper_group ===")
+        
         # Check if papers is empty
         if not papers:
+            logger.info("=== FINISH: _merge_paper_group - No papers to merge ===")
             return {}
         
         if len(papers) == 1:
@@ -1066,4 +1084,5 @@ class PaperCollector:
                 if field in paper and paper[field] and (field not in merged or not merged[field]):
                     merged[field] = paper[field]
 
+        logger.info(f"=== FINISH: _merge_paper_group - Merged {len(papers)} papers ===")
         return merged 

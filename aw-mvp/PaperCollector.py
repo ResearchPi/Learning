@@ -22,16 +22,16 @@ class PaperCollector:
     PaperCollector is a class that collects research papers from multiple academic databases
     """
     
-    def __init__(self, name: str, school: str = None):
+    def __init__(self, name: str, affiliation: str = None):
         """
-        Initialize PaperCollector with professor's name and school
+        Initialize PaperCollector with professor's name and affiliation
         
         Args:
             name: Professor's name
-            school: Professor's school/institution
+            affiliation: Professor's affiliation
         """
         self.name = name
-        self.school = school
+        self.affiliation = affiliation
     
     def get_papers(self):
         """
@@ -54,7 +54,7 @@ class PaperCollector:
 
         logger.info(f"=== FINISH: get_papers - Found {len(papers)} total papers ===")
         return papers
-    
+      
     def print_papers(self, papers: list):
         """Print papers in a readable format"""
         if not papers:
@@ -127,10 +127,10 @@ class PaperCollector:
             f'au:{self.name}',    # Standard search
         ]
         
-        # Add school affiliation if provided (optional)
-        if self.school:
-            search_strategies.append(f'au:"{self.name}" AND aff:"{self.school}"')
-            search_strategies.append(f'au:{self.name} OR aff:{self.school}')
+        # Add affiliation affiliation if provided (optional)
+        if self.affiliation:
+            search_strategies.append(f'au:"{self.name}" AND aff:"{self.affiliation}"')
+            search_strategies.append(f'au:{self.name} OR aff:{self.affiliation}')
 
         all_papers = []
         
@@ -246,10 +246,10 @@ class PaperCollector:
             f'{self.name}[Author]',    # Standard search
         ]
         
-        # Add school affiliation if provided (optional)
-        if self.school:
-            search_strategies.append(f'"{self.name}"[Author] AND "{self.school}"[Affiliation]')
-            search_strategies.append(f'{self.name}[Author] AND {self.school}[Affiliation]')
+        # Add affiliation affiliation if provided (optional)
+        if self.affiliation:
+            search_strategies.append(f'"{self.name}"[Author] AND "{self.affiliation}"[Affiliation]')
+            search_strategies.append(f'{self.name}[Author] AND {self.affiliation}[Affiliation]')
         
         all_papers = []
         
@@ -428,10 +428,10 @@ class PaperCollector:
             f'"{self.name}"',  # Exact match
         ]
         
-        # Add school affiliation if provided (optional)
-        if self.school:
-            search_strategies.append(f'{self.name} {self.school}')
-            search_strategies.append(f'"{self.name}" "{self.school}"')
+        # Add affiliation affiliation if provided (optional)
+        if self.affiliation:
+            search_strategies.append(f'{self.name} {self.affiliation}')
+            search_strategies.append(f'"{self.name}" "{self.affiliation}"')
         
         all_papers = []
         
@@ -578,10 +578,10 @@ class PaperCollector:
             f'"{self.name}"',
         ]
         
-        # Add school affiliation if provided (optional)
-        if self.school:
-            search_strategies.append(f'metadata.creators.person_or_org.name:"{self.name}" AND metadata.creators.person_or_org.affiliation:"{self.school}"')
-            search_strategies.append(f'"{self.name}" "{self.school}"')
+        # Add affiliation affiliation if provided (optional)
+        if self.affiliation:
+            search_strategies.append(f'metadata.creators.person_or_org.name:"{self.name}" AND metadata.creators.person_or_org.affiliation:"{self.affiliation}"')
+            search_strategies.append(f'"{self.name}" "{self.affiliation}"')
         
         all_papers = []
         

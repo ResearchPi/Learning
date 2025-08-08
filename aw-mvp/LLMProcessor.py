@@ -136,7 +136,6 @@ class LLMProcessor:
             
             # Get response as JSON
             try:
-                # First, try direct JSON parsing
                 return json.loads(result)
             except json.JSONDecodeError:
                 # Try to extract JSON from markdown code blocks
@@ -251,15 +250,12 @@ class LLMProcessor:
         top_keywords = list(analysis_data['keyword_frequencies'].keys())[:15]
         
         # Create formatted summary
-        summary = f"""**Research Profile Summary**
-
-**Researcher Information:**
-- **Name:** {analysis_data.get('researcher_name', 'Unknown')}
-- **Total Publications:** {analysis_data['total_papers']}
-- **Primary Institution:** {affiliations[0] if affiliations else 'Unknown'}
-
-**Research Focus Areas:**
-"""
+        summary = "**Research Profile Summary**\n\n"
+        summary += "**Researcher Information:**\n"
+        summary += f"- **Name:** {analysis_data.get('researcher_name', 'Unknown')}\n"
+        summary += f"- **Total Publications:** {analysis_data['total_papers']}\n"
+        summary += f"- **Primary Institution:** {affiliations[0] if affiliations else 'Unknown'}\n\n"
+        summary += "**Research Focus Areas:**\n"
         
         # Add primary fields
         if primary_fields:
@@ -290,9 +286,10 @@ class LLMProcessor:
         
         # Add affiliations section
         if affiliations:
-            summary += "**Institutional Affiliations:**\n"
+            summary += "**Institutional Affiliations:**\n\n"
             for i, affiliation in enumerate(affiliations, 1):
-                summary += f"- {affiliation}\n"
+                summary += f"{i}. {affiliation}\n"
+            summary += "\n"
         
         # Add research impact summary
         summary += f"\n**Research Impact Summary:**\n"
@@ -349,8 +346,7 @@ class LLMProcessor:
         """Fallback summary using formatted approach"""
         return self._generate_overall_summary(analysis_data, field_classification)
     
-    def create_final_output(self, papers_with_keywords: List[Dict], 
-                           field_classification: Dict, affiliations: List[str] = None) -> Dict[str, Any]:
+    def create_final_output(self, papers_with_keywords: List[Dict], field_classification: Dict) -> Dict[str, Any]:
         """
         Create the final structured output combining all data
         
@@ -362,14 +358,13 @@ class LLMProcessor:
             Complete structured output
         """
         
-        # Sort papers by date (recent to oldest)
+        # Sort papers by date
         sorted_papers = sorted(
             papers_with_keywords,
             key=lambda x: x.get('publication_date', ''),
             reverse=True
         )
         
-        # Create final structure
         output = {
             "metadata": {
                 "generation_date": datetime.now().isoformat(),

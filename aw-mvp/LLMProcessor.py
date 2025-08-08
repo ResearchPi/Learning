@@ -17,25 +17,28 @@ class LLMProcessor:
         Initialize LLMProcessor
         
         Args:
-            api_key: API key for DeepSeek (via OpenRouter or direct)
+            api_key: API key for OpenRouter
             api_base: API base URL (optional, defaults to OpenRouter)
         """
         self.api_key = api_key
         self.api_base = api_base or "https://openrouter.ai/api/v1"
-        self.model_name = "deepseek/deepseek-r1"
+        self.model_name = "deepseek/deepseek-r1:free"  
         self.client = None
         self._initialize_client()
     
     def _initialize_client(self):
+        """Initialize the DeepSeek client"""
         try:
-            import openai
+            from openai import OpenAI
             
+            # For free version, API key not required
             if not self.api_key:
-                raise ValueError("API key required for DeepSeek")
+                raise ValueError("API key required for OpenRouter (even for free models)")
             
-            self.client = openai
-            openai.api_key = self.api_key
-            openai.api_base = self.api_base
+            self.client = OpenAI(
+                api_key=self.api_key,
+                base_url=self.api_base
+            )
             
             logger.info(f"DeepSeek client initialized with {self.api_base}")
                 
@@ -43,12 +46,13 @@ class LLMProcessor:
             logger.error(f"Failed to initialize DeepSeek client: {e}")
             raise
     
-    def classify_research_fields(self, papers_with_keywords: List[Dict]) -> Dict[str, Any]:
+    def classify_research_fields(self, papers_with_keywords: List[Dict], affiliations: List[str] = None) -> Dict[str, Any]:
         """
         Classify research paper's keywords into broader research fields using DeepSeek
         
         Args:
             papers_with_keywords: List of papers with extracted keywords
+            affiliations: List of researcher's affiliations
             
         Returns:
             Dictionary with field classifications and summaries
@@ -58,6 +62,10 @@ class LLMProcessor:
         
         # Prepare data for LLM analysis
         analysis_data = self._prepare_analysis_data(papers_with_keywords)
+        
+        # Add affiliations to analysis data
+        if affiliations:
+            analysis_data['researcher_affiliations'] = affiliations
         
         # Get classification from DeepSeek
         field_classification = self._get_field_classification(analysis_data)
@@ -115,22 +123,40 @@ class LLMProcessor:
         prompt = self._create_field_classification_prompt(analysis_data)
         
         try:
-            response = self.client.ChatCompletion.create(
+            response = self.client.chat.completions.create(
                 model=self.model_name,
                 messages=[
-                    {"role": "system", "content": "You are an expert research analyst specializing in academic field classification."},
+                    {"role": "system", "content": "You are an expert research analyst specializing in academic field classification. Always respond with valid JSON only."},
                     {"role": "user", "content": prompt}
                 ],
-                temperature=0.3,
+                temperature=0.2,
                 max_tokens=2000
             )
-            result = response.choices[0].message.content
+            result = response.choices[0].message.content.strip()
             
             # Get response as JSON
             try:
+                # First, try direct JSON parsing
                 return json.loads(result)
             except json.JSONDecodeError:
-                logger.warning("Failed to parse DeepSeek response as JSON, using fallback")
+                # Try to extract JSON from markdown code blocks
+                import re
+                json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', result, re.DOTALL)
+                if json_match:
+                    try:
+                        return json.loads(json_match.group(1))
+                    except json.JSONDecodeError:
+                        pass
+                
+                # Try to find JSON-like content
+                json_match = re.search(r'\{.*\}', result, re.DOTALL)
+                if json_match:
+                    try:
+                        return json.loads(json_match.group(0))
+                    except json.JSONDecodeError:
+                        pass
+                
+                logger.warning(f"Failed to parse DeepSeek response as JSON. Response: {result[:200]}...")
                 return self._fallback_field_classification(analysis_data)
                 
         except Exception as e:
@@ -165,11 +191,12 @@ class LLMProcessor:
         
         prompt += """
         
-        Please analyze this data and return a JSON response with the following structure:
+        TASK: Analyze this research data and classify it into research fields. Return ONLY a valid JSON object with this exact structure:
+        
         {
             "primary_fields": [
                 {
-                    "name": "Field Name (e.g., Medical Imaging)",
+                    "name": "Field Name",
                     "description": "Brief description of the field",
                     "confidence": 0.95,
                     "key_terms": ["term1", "term2", "term3"],
@@ -178,7 +205,7 @@ class LLMProcessor:
             ],
             "secondary_fields": [
                 {
-                    "name": "Secondary Field Name",
+                    "name": "Secondary Field Name", 
                     "description": "Brief description",
                     "confidence": 0.75,
                     "key_terms": ["term1", "term2"],
@@ -188,7 +215,7 @@ class LLMProcessor:
             "interdisciplinary_areas": [
                 {
                     "name": "Interdisciplinary Area",
-                    "description": "Description",
+                    "description": "Description", 
                     "confidence": 0.8,
                     "key_terms": ["term1", "term2"],
                     "paper_count": 5
@@ -196,56 +223,86 @@ class LLMProcessor:
             ]
         }
         
-        Guidelines:
-        1. Identify 2-4 primary research fields
-        2. Include 1-3 secondary fields if applicable
-        3. Note any interdisciplinary areas
-        4. Provide confidence scores (0.0-1.0)
-        5. List key terms that define each field
-        6. Estimate paper count per field
-        7. Use academic field names (e.g., "Computer Vision", "Medical Imaging", "Machine Learning")
+        REQUIREMENTS:
+        1. Identify 2-4 primary research fields based on the most frequent keywords and paper titles
+        2. Use standard academic field names: "Computer Vision", "Medical Imaging", "Machine Learning", "Deep Learning", "Image Processing", "Computer Graphics", "Robotics", "Data Science", "Artificial Intelligence"
+        3. Provide confidence scores between 0.0 and 1.0
+        4. List 3-5 key terms that define each field
+        5. Estimate paper count based on keyword frequency
+        6. Return ONLY the JSON object, no additional text or formatting
         
-        Return only valid JSON.
+        IMPORTANT: Your response must be valid JSON that can be parsed by json.loads().
         """
         
         return prompt
     
     def _generate_overall_summary(self, analysis_data: Dict, field_classification: Dict) -> str:
-        """Generate overall research summary"""
+        """Generate formatted research summary from collected data"""
         
-        prompt = f"""
-        Based on the following research field classification, generate a comprehensive summary of the researcher's work:
+        # Extract field information
+        primary_fields = field_classification.get('primary_fields', [])
+        secondary_fields = field_classification.get('secondary_fields', [])
+        interdisciplinary_areas = field_classification.get('interdisciplinary_areas', [])
         
-        Field Classification: {json.dumps(field_classification, indent=2)}
+        # Get affiliations
+        affiliations = analysis_data.get('researcher_affiliations', [])
         
-        Research Data:
-        - Total papers: {analysis_data['total_papers']}
-        - Top keywords: {', '.join(list(analysis_data['keyword_frequencies'].keys())[:15])}
+        # Get top keywords
+        top_keywords = list(analysis_data['keyword_frequencies'].keys())[:15]
         
-        Please provide a 2-3 paragraph summary that:
-        1. Describes the researcher's primary areas of expertise
-        2. Highlights key research themes and methodologies
-        3. Notes any interdisciplinary connections
-        4. Mentions the scope and impact of their work
+        # Create formatted summary
+        summary = f"""**Research Profile Summary**
+
+**Researcher Information:**
+- **Name:** {analysis_data.get('researcher_name', 'Unknown')}
+- **Total Publications:** {analysis_data['total_papers']}
+- **Primary Institution:** {affiliations[0] if affiliations else 'Unknown'}
+
+**Research Focus Areas:**
+"""
         
-        Write in a professional, academic tone suitable for a research profile.
-        """
+        # Add primary fields
+        if primary_fields:
+            summary += "\n**Primary Research Fields:**\n"
+            for field in primary_fields:
+                summary += f"- **{field.get('name', 'Unknown')}** (Confidence: {field.get('confidence', 0):.2f})\n"
+                summary += f"  - Description: {field.get('description', 'No description available')}\n"
+                summary += f"  - Key Terms: {', '.join(field.get('key_terms', [])[:5])}\n"
+                summary += f"  - Estimated Papers: {field.get('paper_count', 0)}\n\n"
         
-        try:
-            response = self.client.ChatCompletion.create(
-                model=self.model_name,
-                messages=[
-                    {"role": "system", "content": "You are an expert academic writer specializing in research summaries."},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.4,
-                max_tokens=500
-            )
-            return response.choices[0].message.content
-                
-        except Exception as e:
-            logger.error(f"Error generating summary: {e}")
-            return self._fallback_summary(analysis_data, field_classification)
+        # Add secondary fields
+        if secondary_fields:
+            summary += "**Secondary Research Fields:**\n"
+            for field in secondary_fields:
+                summary += f"- **{field.get('name', 'Unknown')}** (Confidence: {field.get('confidence', 0):.2f})\n"
+                summary += f"  - Key Terms: {', '.join(field.get('key_terms', [])[:3])}\n\n"
+        
+        # Add interdisciplinary areas
+        if interdisciplinary_areas:
+            summary += "**Interdisciplinary Areas:**\n"
+            for area in interdisciplinary_areas:
+                summary += f"- **{area.get('name', 'Unknown')}** (Confidence: {area.get('confidence', 0):.2f})\n"
+                summary += f"  - Description: {area.get('description', 'No description available')}\n\n"
+        
+        # Add key research themes
+        summary += f"**Key Research Themes:**\n"
+        summary += f"- {', '.join(top_keywords[:10])}\n\n"
+        
+        # Add affiliations section
+        if affiliations:
+            summary += "**Institutional Affiliations:**\n"
+            for i, affiliation in enumerate(affiliations, 1):
+                summary += f"- {affiliation}\n"
+        
+        # Add research impact summary
+        summary += f"\n**Research Impact Summary:**\n"
+        summary += f"This researcher has published {analysis_data['total_papers']} papers across multiple domains, "
+        if primary_fields:
+            summary += f"with primary focus on {', '.join([f.get('name', '') for f in primary_fields[:2]])}. "
+        summary += f"Their work spans {len(affiliations) if affiliations else 0} different institutional affiliations, "
+        summary += f"demonstrating broad collaborative networks and interdisciplinary research approaches."
+        
+        return summary
     
     def _fallback_field_classification(self, analysis_data: Dict) -> Dict[str, Any]:
         """Fallback field classification if DeepSeek fails"""
@@ -289,23 +346,11 @@ class LLMProcessor:
         }
     
     def _fallback_summary(self, analysis_data: Dict, field_classification: Dict) -> str:
-        """Fallback summary if DeepSeek fails"""
-        
-        primary_fields = [field['name'] for field in field_classification.get('primary_fields', [])]
-        
-        summary = f"This researcher has published {analysis_data['total_papers']} papers "
-        summary += f"primarily in the areas of {', '.join(primary_fields)}. "
-        
-        if primary_fields:
-            summary += f"Their work focuses on {primary_fields[0].lower()} with applications "
-            summary += f"in {', '.join(primary_fields[1:]) if len(primary_fields) > 1 else 'related domains'}. "
-        
-        summary += f"Key research themes include {', '.join(list(analysis_data['keyword_frequencies'].keys())[:5])}."
-        
-        return summary
+        """Fallback summary using formatted approach"""
+        return self._generate_overall_summary(analysis_data, field_classification)
     
     def create_final_output(self, papers_with_keywords: List[Dict], 
-                           field_classification: Dict) -> Dict[str, Any]:
+                           field_classification: Dict, affiliations: List[str] = None) -> Dict[str, Any]:
         """
         Create the final structured output combining all data
         
@@ -331,7 +376,7 @@ class LLMProcessor:
                 "total_papers": len(sorted_papers),
                 "sources": ["arXiv", "PubMed", "DOAJ", "Zenodo", "Crossref"],
                 "nlp_model_used": "KeyBERT",
-                "llm_provider": "DeepSeek R1"
+                "llm_provider": "DeepSeek R1 (Free)"
             },
             "field_classification": field_classification,
             "papers": []

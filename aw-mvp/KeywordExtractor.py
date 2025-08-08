@@ -57,7 +57,7 @@ class KeywordExtractor:
             text_parts.append(paper['abstract'])
         
         if not text_parts:
-            return {'keywords': [], 'sources': []}
+            return {'keywords': [], 'categories': []}
         
         combined_text = ' '.join(text_parts)
         
@@ -69,6 +69,6 @@ class KeywordExtractor:
         
         return {
             'keywords': keywords,
-            'original_categories': original_categories,
+            'categories': original_categories,
             'text_used': combined_text[:200] + '...' if len(combined_text) > 200 else combined_text
         } 

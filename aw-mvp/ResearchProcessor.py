@@ -65,7 +65,7 @@ class ResearchProcessor:
         
         # Classify research fields using DeepSeek from keywords
         logger.info("Step 3: Classifying research fields using DeepSeek...")
-        classification_result = self.llm_processor.classify_research_fields(papers_with_keywords, all_affiliations)
+        classification_result = self.llm_processor.classify_research_fields(papers_with_keywords, all_affiliations, name)
         
         # Extract the field classification from the result
         field_classification = classification_result.get("fields", {})

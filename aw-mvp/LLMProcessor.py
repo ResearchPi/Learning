@@ -46,13 +46,14 @@ class LLMProcessor:
             logger.error(f"Failed to initialize DeepSeek client: {e}")
             raise
     
-    def classify_research_fields(self, papers_with_keywords: List[Dict], affiliations: List[str] = None) -> Dict[str, Any]:
+    def classify_research_fields(self, papers_with_keywords: List[Dict], affiliations: List[str] = None, researcher_name: str = None) -> Dict[str, Any]:
         """
         Classify research paper's keywords into broader research fields using DeepSeek
         
         Args:
             papers_with_keywords: List of papers with extracted keywords
             affiliations: List of researcher's affiliations
+            researcher_name: Name of the researcher
             
         Returns:
             Dictionary with field classifications and summaries
@@ -63,7 +64,9 @@ class LLMProcessor:
         # Prepare data for LLM analysis
         analysis_data = self._prepare_analysis_data(papers_with_keywords)
         
-        # Add affiliations to analysis data
+        # Add researcher name and affiliations to analysis data
+        if researcher_name:
+            analysis_data['researcher_name'] = researcher_name
         if affiliations:
             analysis_data['researcher_affiliations'] = affiliations
         

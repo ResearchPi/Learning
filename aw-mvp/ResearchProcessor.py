@@ -73,7 +73,7 @@ class ResearchProcessor:
         
         # Create output
         logger.info("Step 4: Creating final output...")
-        final_output = self.llm_processor.create_final_output(papers_with_keywords, field_classification, all_affiliations)
+        final_output = self.llm_processor.create_final_output(papers_with_keywords, field_classification)
         
         # Add the summary to the final output
         if 'summary' not in final_output:

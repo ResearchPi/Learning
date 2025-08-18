@@ -21,8 +21,8 @@ def test_get_papers_from_crossref():
     print(papers)
 
 if __name__ == "__main__":
-    # test_get_papers_from_arxiv() # issue with people with the same name
-    # test_get_papers_from_pubmed()
-    # test_get_papers_from_zenodo()
-    # test_get_papers_from_crossref()
+    test_get_papers_from_arxiv() # issue with people with the same name
+    test_get_papers_from_pubmed()
+    test_get_papers_from_zenodo()
+    test_get_papers_from_crossref()
     test_get_papers_from_doaj()
